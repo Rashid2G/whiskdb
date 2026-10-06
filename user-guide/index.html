@@ -7,14 +7,14 @@
         
         <meta name="author" content="WhiskDB Team">
         
-        <link rel="shortcut icon" href="/img/favicon.ico">
-        <title>WhiskDB</title>
-        <link href="/css/bootstrap.min.css" rel="stylesheet">
-        <link href="/css/fontawesome.min.css" rel="stylesheet">
-        <link href="/css/brands.min.css" rel="stylesheet">
-        <link href="/css/solid.min.css" rel="stylesheet">
-        <link href="/css/v4-font-face.min.css" rel="stylesheet">
-        <link href="/css/base.css" rel="stylesheet">
+        <link rel="shortcut icon" href="../img/favicon.ico">
+        <title>User Guide - WhiskDB</title>
+        <link href="../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../css/fontawesome.min.css" rel="stylesheet">
+        <link href="../css/brands.min.css" rel="stylesheet">
+        <link href="../css/solid.min.css" rel="stylesheet">
+        <link href="../css/v4-font-face.min.css" rel="stylesheet">
+        <link href="../css/base.css" rel="stylesheet">
         <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" disabled>
         <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" >
         <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
@@ -24,7 +24,7 @@
     <body>
         <div class="navbar fixed-top navbar-expand-lg navbar-dark bg-primary">
             <div class="container">
-                <a class="navbar-brand" href="/.">WhiskDB</a>
+                <a class="navbar-brand" href="..">WhiskDB</a>
                 <!-- Expander button -->
                 <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#navbar-collapse" aria-controls="navbar-collapse" aria-expanded="false" aria-label="Toggle navigation">
                     <span class="navbar-toggler-icon"></span>
@@ -35,19 +35,19 @@
                         <!-- Main navigation -->
                         <ul class="nav navbar-nav">
                             <li class="nav-item">
-                                <a href="/." class="nav-link">Home</a>
+                                <a href=".." class="nav-link">Home</a>
                             </li>
                             <li class="nav-item">
-                                <a href="/development/" class="nav-link">Development</a>
+                                <a href="../development/" class="nav-link">Development</a>
                             </li>
                             <li class="nav-item">
-                                <a href="/developer-guide/" class="nav-link">Developer Guide</a>
+                                <a href="../developer-guide/" class="nav-link">Developer Guide</a>
                             </li>
                             <li class="nav-item">
-                                <a href="/user-guide/" class="nav-link">User Guide</a>
+                                <a href="./" class="nav-link active" aria-current="page">User Guide</a>
                             </li>
                             <li class="nav-item">
-                                <a href="/about/" class="nav-link">About</a>
+                                <a href="../about/" class="nav-link">About</a>
                             </li>
                         </ul>
 
@@ -58,7 +58,18 @@
                             </a>
                         </li>
                             <li class="nav-item">
-                                <a href="https://github.com/Rashid2G/whiskdb" class="nav-link">Rashid2G/whiskdb</a>
+                                <a rel="prev" href="../developer-guide/" class="nav-link">
+                                    <i class="fa fa-arrow-left"></i> Previous
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a rel="next" href="../about/" class="nav-link">
+                                    Next <i class="fa fa-arrow-right"></i>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="https://github.com/Rashid2G/whiskdb/edit/master/docs/user-guide.md" class="nav-link">Edit on Rashid2G/whiskdb
+                                    </a>
                             </li>
                             <li class="nav-item dropdown">
                               <button id="theme-menu" aria-expanded="false" data-bs-toggle="dropdown" data-bs-display="static" aria-label="Toggle theme" class="nav-link dropdown-toggle">
@@ -93,19 +104,42 @@
                 </div>
             </div>
         </div>
-        <script src="/js/darkmode.js"></script>
+        <script src="../js/darkmode.js"></script>
 
         <div class="container">
             <div class="row">
-
-    <div class="row-fluid">
-      <div id="main-content" class="span12">
-        <h1 id="404-page-not-found" style="text-align: center">404</h1>
-        <p style="text-align: center"><strong>Page not found</strong></p>
-      </div>
+                    <div class="col-md-3"><div class="navbar-expand-md bs-sidebar hidden-print affix" role="complementary">
+    <div class="navbar-header">
+        <button type="button" class="navbar-toggler collapsed" data-bs-toggle="collapse" data-bs-target="#toc-collapse" title="Table of Contents">
+            <span class="fa fa-angle-down"></span>
+        </button>
     </div>
 
+    
+    <div id="toc-collapse" class="navbar-collapse collapse card bg-body-tertiary">
+        <ul class="nav flex-column">
+            
+            <li class="nav-item" data-bs-level="1"><a href="#user-guide" class="nav-link">User Guide</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+        </ul>
+    </div>
+</div></div>
+                    <div class="col-md-9" role="main">
 
+<h1 id="user-guide">User Guide</h1>
+<div class="admonition info">
+<p class="admonition-title">Documentation Pending MVP Release</p>
+<p>WhiskDB is currently under active pre-MVP development as part of the YZL 400 Senior Graduation Project.</p>
+<p>The user-facing documentation will be published here upon completion of our first MVP milestone.</p>
+</div>
+<hr />
+<p>For information on project milestones and engineering standards, please visit:</p>
+<ul>
+<li><a href="../development/">Project Development Overview</a></li>
+<li><a href="../developer-guide/">Developer Guide</a></li>
+</ul></div>
             </div>
         </div>
 
@@ -113,13 +147,13 @@
             <hr>
             <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
         </footer>
-        <script src="/js/bootstrap.bundle.min.js"></script>
+        <script src="../js/bootstrap.bundle.min.js"></script>
         <script>
-            var base_url = "/",
+            var base_url = "..",
                 shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
         </script>
-        <script src="/js/base.js"></script>
-        <script src="/search/main.js"></script>
+        <script src="../js/base.js"></script>
+        <script src="../search/main.js"></script>
 
         <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="searchModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
