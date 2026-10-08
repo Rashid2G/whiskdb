@@ -17,6 +17,7 @@
         <link href="../css/base.css" rel="stylesheet">
         <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" disabled>
         <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" >
+        <link href="../css/custom.css" rel="stylesheet">
         <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
         <script>hljs.highlightAll();</script> 
     </head>
@@ -45,9 +46,6 @@
                             </li>
                             <li class="nav-item">
                                 <a href="../user-guide/" class="nav-link">User Guide</a>
-                            </li>
-                            <li class="nav-item">
-                                <a href="../about/" class="nav-link">About</a>
                             </li>
                         </ul>
 
@@ -125,6 +123,10 @@
               <ul class="nav flex-column">
               </ul>
             </li>
+            <li class="nav-item" data-bs-level="2"><a href="#external-libraries" class="nav-link">External Libraries</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
               </ul>
             </li>
         </ul>
@@ -145,6 +147,13 @@
 <li><strong>Persistence &amp; Crash Recovery</strong></li>
 <li><strong>Real-Time Client Subscriptions</strong></li>
 </ol>
+<hr />
+<h2 id="external-libraries">External Libraries</h2>
+<p>WhiskDB integrates external libraries to support its architecture and objectives:</p>
+<ul>
+<li><strong><a href="https://www.boost.org/doc/libs/release/libs/beast/">Boost.Beast</a></strong> (<code>boost/beast</code>): Networking and WebSocket protocol library built on top of <strong>Boost.Asio</strong>, powering WhiskDB's client connection handling and real-time subscription streaming.</li>
+</ul>
+<p>For detailed developer guidelines and conventions, see the <a href="../developer-guide/#external-libraries">Developer Guide</a>.</p>
 <hr /></div>
             </div>
         </div>

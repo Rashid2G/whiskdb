@@ -1,0 +1,249 @@
+/* Custom WhiskDB Theme Color: Emerald (#10b981) replacing default Cerulean blue */
+
+:root,
+[data-bs-theme="light"] {
+  --bs-primary: #10b981;
+  --bs-primary-rgb: 16, 185, 129;
+  --bs-primary-text-emphasis: #065f46;
+  --bs-primary-bg-subtle: #d1fae5;
+  --bs-primary-border-subtle: #a7f3d0;
+
+  --bs-link-color: #10b981;
+  --bs-link-color-rgb: 16, 185, 129;
+  --bs-link-hover-color: #059669;
+  --bs-link-hover-color-rgb: 5, 150, 105;
+
+  --bs-info: #10b981;
+  --bs-info-rgb: 16, 185, 129;
+  --bs-info-text-emphasis: #065f46;
+  --bs-info-bg-subtle: #d1fae5;
+  --bs-info-border-subtle: #a7f3d0;
+
+  --bs-focus-ring-color: rgba(16, 185, 129, 0.25);
+}
+
+[data-bs-theme="dark"] {
+  --bs-primary: #10b981;
+  --bs-primary-rgb: 16, 185, 129;
+  --bs-primary-text-emphasis: #34d399;
+  --bs-primary-bg-subtle: #064e3b;
+  --bs-primary-border-subtle: #047857;
+
+  --bs-link-color: #10b981;
+  --bs-link-color-rgb: 16, 185, 129;
+  --bs-link-hover-color: #34d399;
+  --bs-link-hover-color-rgb: 52, 211, 153;
+
+  --bs-info: #10b981;
+  --bs-info-rgb: 16, 185, 129;
+  --bs-info-text-emphasis: #34d399;
+  --bs-info-bg-subtle: #064e3b;
+  --bs-info-border-subtle: #047857;
+
+  --bs-focus-ring-color: rgba(16, 185, 129, 0.25);
+}
+
+/* Header Navbar */
+.navbar.bg-primary,
+.bg-primary {
+  background-color: #10b981 !important;
+  background-image: linear-gradient(180deg, #34d399 0%, #10b981 60%, #059669 100%) !important;
+}
+
+.navbar.bg-primary .navbar-brand {
+  color: #ffffff !important;
+}
+
+.navbar.bg-primary .navbar-nav .nav-link {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.navbar.bg-primary .navbar-nav .nav-link:hover,
+.navbar.bg-primary .navbar-nav .nav-link:focus,
+.navbar.bg-primary .navbar-nav .nav-link.active {
+  color: #ffffff !important;
+}
+
+/* Links */
+a {
+  color: var(--bs-link-color);
+}
+
+a:hover,
+a:focus {
+  color: var(--bs-link-hover-color);
+}
+
+.link-primary {
+  color: #10b981 !important;
+}
+
+.link-primary:hover,
+.link-primary:focus {
+  color: #059669 !important;
+}
+
+/* Buttons */
+.btn-primary {
+  --bs-btn-bg: #10b981 !important;
+  --bs-btn-border-color: #10b981 !important;
+  --bs-btn-hover-bg: #059669 !important;
+  --bs-btn-hover-border-color: #047857 !important;
+  --bs-btn-active-bg: #047857 !important;
+  --bs-btn-active-border-color: #065f46 !important;
+  --bs-btn-focus-shadow-rgb: 16, 185, 129 !important;
+  background-color: #10b981 !important;
+  border-color: #10b981 !important;
+  background-image: linear-gradient(180deg, #34d399 0%, #10b981 60%, #059669 100%) !important;
+}
+
+.btn-primary:hover,
+.btn-primary:focus {
+  background-color: #059669 !important;
+  border-color: #047857 !important;
+  background-image: none !important;
+}
+
+.btn-primary:active {
+  background-color: #047857 !important;
+  border-color: #065f46 !important;
+}
+
+.btn-outline-primary {
+  --bs-btn-color: #10b981 !important;
+  --bs-btn-border-color: #10b981 !important;
+  --bs-btn-hover-bg: #10b981 !important;
+  --bs-btn-hover-border-color: #10b981 !important;
+  --bs-btn-focus-shadow-rgb: 16, 185, 129 !important;
+  color: #10b981 !important;
+  border-color: #10b981 !important;
+}
+
+.btn-outline-primary:hover,
+.btn-outline-primary:focus,
+.btn-outline-primary:active {
+  background-color: #10b981 !important;
+  border-color: #10b981 !important;
+  color: #ffffff !important;
+}
+
+/* Sidebar & Navigation TOC */
+.bs-sidebar .nav > li > a:hover,
+.bs-sidebar .nav > li > a:focus {
+  border-right-color: #10b981 !important;
+  color: #10b981 !important;
+}
+
+.bs-sidebar .nav > li > a.active,
+.bs-sidebar .nav > li > a.active:hover,
+.bs-sidebar .nav > li > a.active:focus {
+  border-right-color: #10b981 !important;
+  color: #10b981 !important;
+}
+
+/* Dropdown Menu */
+.dropdown-item:hover,
+.dropdown-item:focus,
+.dropdown-item.active,
+.dropdown-item:active,
+.dropdown-item.open {
+  background-color: #10b981 !important;
+  color: #ffffff !important;
+}
+
+.dropdown-menu-dark .dropdown-item.active,
+.dropdown-menu-dark .dropdown-item:active {
+  background-color: #10b981 !important;
+  color: #ffffff !important;
+}
+
+/* Nav Pills */
+.nav-pills {
+  --bs-nav-pills-link-active-bg: #10b981 !important;
+}
+
+.nav-pills .nav-link.active {
+  background-color: #10b981 !important;
+}
+
+/* Pagination */
+.pagination {
+  --bs-pagination-active-bg: #10b981 !important;
+  --bs-pagination-active-border-color: #10b981 !important;
+  --bs-pagination-focus-box-shadow: 0 0 0 0.25rem rgba(16, 185, 129, 0.25) !important;
+}
+
+.page-item.active .page-link {
+  background-color: #10b981 !important;
+  border-color: #10b981 !important;
+}
+
+.page-link {
+  color: #10b981;
+}
+
+.page-link:hover,
+.page-link:focus {
+  color: #059669;
+}
+
+/* Badges */
+.badge.bg-primary {
+  background-color: #10b981 !important;
+}
+
+/* Form Controls & Checkboxes */
+.form-check-input:checked,
+.form-check-input[type="checkbox"]:indeterminate {
+  background-color: #10b981 !important;
+  border-color: #10b981 !important;
+}
+
+.form-range::-webkit-slider-thumb {
+  background-color: #10b981 !important;
+}
+
+.form-range::-moz-range-thumb {
+  background-color: #10b981 !important;
+}
+
+.form-control:focus,
+.form-select:focus {
+  border-color: #10b981 !important;
+  box-shadow: 0 0 0 0.25rem rgba(16, 185, 129, 0.25) !important;
+}
+
+.nav-link:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 0.25rem rgba(16, 185, 129, 0.25) !important;
+}
+
+/* Admonitions */
+.admonition.note,
+details.note {
+  border-color: var(--bs-primary-border-subtle);
+  background-color: var(--bs-primary-bg-subtle);
+  color: var(--bs-primary-text-emphasis);
+}
+
+.admonition.note .admonition-title,
+details.note summary {
+  color: var(--bs-primary-text-emphasis);
+}
+
+.admonition.info,
+details.info {
+  border-color: var(--bs-info-border-subtle);
+  background-color: var(--bs-info-bg-subtle);
+  color: var(--bs-info-text-emphasis);
+}
+
+.admonition.info .admonition-title,
+details.info summary {
+  color: var(--bs-info-text-emphasis);
+}
+
+/* Search Highlights */
+.search-modal .modal-header {
+  border-bottom-color: var(--bs-border-color);
+}

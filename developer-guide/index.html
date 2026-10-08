@@ -17,6 +17,7 @@
         <link href="../css/base.css" rel="stylesheet">
         <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" disabled>
         <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" >
+        <link href="../css/custom.css" rel="stylesheet">
         <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
         <script>hljs.highlightAll();</script> 
     </head>
@@ -45,9 +46,6 @@
                             </li>
                             <li class="nav-item">
                                 <a href="../user-guide/" class="nav-link">User Guide</a>
-                            </li>
-                            <li class="nav-item">
-                                <a href="../about/" class="nav-link">About</a>
                             </li>
                         </ul>
 
@@ -121,6 +119,10 @@
             
             <li class="nav-item" data-bs-level="1"><a href="#developer-guide" class="nav-link">Developer Guide</a>
               <ul class="nav flex-column">
+            <li class="nav-item" data-bs-level="2"><a href="#external-libraries" class="nav-link">External Libraries</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
             <li class="nav-item" data-bs-level="2"><a href="#coding-standards-conventions" class="nav-link">Coding Standards &amp; Conventions</a>
               <ul class="nav flex-column">
               </ul>
@@ -139,14 +141,159 @@
 <h1 id="developer-guide">Developer Guide</h1>
 <p>Welcome to the WhiskDB Developer Guide. This document defines the engineering standards, architecture, and collaboration workflow for all team members contributing to the project.</p>
 <hr />
-<h3 id="core-components">Core Components</h3>
+<h2 id="external-libraries">External Libraries</h2>
+<p>WhiskDB leverages external C++ libraries for low-level networking, protocols, and performance-critical operations:</p>
+<table>
+<thead>
+<tr>
+<th>Library</th>
+<th>Component / Header</th>
+<th>Purpose</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><a href="https://www.boost.org/doc/libs/release/libs/beast/">Boost.Beast</a></strong></td>
+<td><code>boost/beast</code> (<code>#include &lt;boost/beast.hpp&gt;</code>)</td>
+<td>Networking &amp; WebSocket</td>
+<td>Provides HTTP and WebSocket protocol implementations built on top of <strong>Boost.Asio</strong>. Powers WhiskDB's client connection handling, real-time reactive subscriptions, and network communication layer.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="boostbeast-details">Boost.Beast Details</h3>
+<ul>
+<li><strong>Header &amp; Namespace</strong>: <code>&lt;boost/beast.hpp&gt;</code>, <code>boost::beast</code> (with <code>boost::beast::websocket</code>)</li>
+<li><strong>Underlying I/O Engine</strong>: Built on top of <strong>Boost.Asio</strong> (<code>boost::asio</code>) for scalable, asynchronous, non-blocking network I/O.</li>
+<li><strong>Key Responsibilities</strong>:<ul>
+<li><strong>WebSocket Protocol Handling</strong>: Manages full RFC 6455 compliance, including handshake negotiation, framing, binary and text messages, and ping/pong keep-alives.</li>
+<li><strong>Real-Time Client Subscriptions</strong>: Powers the network communication layer that broadcasts data mutations and subscription updates to connected clients with low latency.</li>
+<li><strong>Zero-Copy Buffer Integration</strong>: Interoperates with memory buffers efficiently to match WhiskDB's in-engine execution model.</li>
+</ul>
+</li>
+<li><strong>Integration &amp; Build</strong>: Managed via <strong>vcpkg</strong> (<code>vcpkg.json</code>) and linked in <code>CMakeLists.txt</code> via CMake's <code>find_package(Boost REQUIRED)</code>.</li>
+</ul>
 <hr />
 <h2 id="coding-standards-conventions">Coding Standards &amp; Conventions</h2>
-<p>To maintain a clean and reliable codebase across the team, all members must adhere to these guidelines:</p>
-<h3 id="1-general-principles">1. General Principles</h3>
-<h3 id="2-code-style-formatting">2. Code Style &amp; Formatting</h3>
-<h3 id="3-error-handling">3. Error Handling</h3>
-<h3 id="4-documentation">4. Documentation</h3>
+<p>To maintain a clean and reliable codebase across the team, all contributors should follow these conventions:</p>
+<h3 id="c-style">C++ Style</h3>
+<h4 id="memory-pointers">Memory &amp; Pointers</h4>
+<ul>
+<li><strong>Smart pointers only</strong>: Never use raw <code>malloc</code>, <code>new</code>, or <code>delete</code>. Use smart pointers for all dynamic allocations.</li>
+<li><strong>Prefer <code>std::unique_ptr</code></strong>: Default to <code>std::unique_ptr</code> for exclusive ownership. Use <code>std::shared_ptr</code> only when multiple owners truly need shared lifetime management.</li>
+</ul>
+<h4 id="types-constants">Types &amp; Constants</h4>
+<ul>
+<li><strong>Fixed-width integers</strong>: Use explicit fixed-width integers (<code>int8_t</code>, <code>int16_t</code>, <code>int32_t</code>, <code>int64_t</code>, <code>uint8_t</code>, <code>uint16_t</code>, <code>uint32_t</code>, <code>uint64_t</code>) instead of standard types like <code>int</code>, <code>long</code>, or <code>uint</code>.</li>
+<li><strong>Indices and offsets</strong>: Use <code>idx_t</code> instead of <code>size_t</code> for counts, offsets, and collection indices.</li>
+<li><strong>Scoped enums (<code>enum class</code>)</strong>: Always use <code>enum class</code> rather than plain C-style enums. Explicitly specify the underlying storage type (e.g., <code>: uint8_t</code>) only when the enum is serialized.</li>
+<li><strong>No magic numbers</strong>: Name literal values using <code>constexpr</code> variables to provide clear meaning and context.</li>
+</ul>
+<h4 id="const-references">Const &amp; References</h4>
+<ul>
+<li><strong>Use <code>const</code> whenever possible</strong>: Mark variables, member functions, and parameters <code>const</code> by default if they should not be modified.</li>
+<li><strong>Pass by reference</strong>: Favor references over raw pointers for function arguments.</li>
+<li><strong>Const references for non-trivial types</strong>: Pass objects that are expensive to copy (e.g., <code>std::vector</code>, <code>std::string</code>) as <code>const &amp;</code>.</li>
+</ul>
+<h4 id="functions-control-flow">Functions &amp; Control Flow</h4>
+<ul>
+<li><strong>Return early</strong>: Keep nesting shallow and avoid deep <code>if</code>/<code>else</code> branches by returning early.</li>
+<li><strong>Always use braces</strong>: Use curly braces <code>{}</code> for all <code>if</code> statements and loops, even for single-line bodies.</li>
+<li><strong>Range-based loops</strong>: Prefer modern range-based <code>for</code> loops whenever iterating:
+  <code>cpp
+  for (const auto&amp; item : items) {
+      // process item
+  }</code></li>
+<li><strong>Virtual overrides</strong>: When overriding a virtual method, omit the <code>virtual</code> keyword and explicitly use <code>override</code> or <code>final</code>.</li>
+</ul>
+<h4 id="namespaces">Namespaces</h4>
+<ul>
+<li><strong>No namespace imports</strong>: Never write <code>using namespace std;</code> or import entire namespaces into source or header files.</li>
+<li><strong>Core namespace</strong>: All functions and classes under the core engine (<code>src/</code>) must reside inside the <code>database</code> namespace.</li>
+</ul>
+<h4 id="class-layout">Class Layout</h4>
+<p>Keep class structures consistent and easy to scan:
+1. Public constructor(s) and public member variables.
+2. Public member functions.
+3. Private helper functions.
+4. Private member variables.</p>
+<pre><code class="language-cpp">class MyClass {
+public:
+    MyClass();
+
+    int my_public_variable;
+
+public:
+    void MyFunction();
+
+private:
+    void MyPrivateFunction();
+
+private:
+    int my_private_variable;
+};
+</code></pre>
+<hr />
+<h3 id="naming-conventions">Naming Conventions</h3>
+<p>Keep names clear and descriptive. Avoid single-letter variables except for standard loop counters in simple, non-nested loops.</p>
+<table>
+<thead>
+<tr>
+<th>Target</th>
+<th>Convention</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Files</strong></td>
+<td>Lowercase with underscores (<code>snake_case</code>)</td>
+<td><code>abstract_operator.cpp</code></td>
+</tr>
+<tr>
+<td><strong>Types</strong> (classes, structs, enums, aliases)</td>
+<td>Capitalized words (<code>PascalCase</code>)</td>
+<td><code>BaseColumn</code>, <code>TupleBuffer</code></td>
+</tr>
+<tr>
+<td><strong>Variables &amp; Members</strong></td>
+<td>Lowercase with underscores (<code>snake_case</code>)</td>
+<td><code>chunk_size</code>, <code>buffer_idx</code></td>
+</tr>
+<tr>
+<td><strong>Functions &amp; Methods</strong></td>
+<td>Capitalized words (<code>PascalCase</code>)</td>
+<td><code>GetChunk()</code>, <code>ExecutePlan()</code></td>
+</tr>
+<tr>
+<td><strong>Loop Indices</strong></td>
+<td>Meaningful names in nested loops</td>
+<td><code>column_idx</code>, <code>row_idx</code> (<code>i</code> is only allowed in single loops)</td>
+</tr>
+</tbody>
+</table>
+<p><em>(Note: These naming guidelines are partially enforced automatically by <code>clang-tidy</code>.)</em></p>
+<hr />
+<h3 id="error-handling-assertions">Error Handling &amp; Assertions</h3>
+<h4 id="exceptions-vs-return-values">Exceptions vs. Return Values</h4>
+<ul>
+<li><strong>Exceptions are for hard failures</strong>: Use exceptions only when an error terminates a query (such as SQL syntax errors, missing tables, or resource exhaustion).</li>
+<li><strong>Return values for normal flow</strong>: If an error is an expected situation that normal execution can handle, return a status or result code instead of throwing.</li>
+<li><strong>Test exception paths</strong>: Always write unit tests that trigger expected exceptions. If an error condition cannot be reproduced in a test, consider whether it should be an invariant assertion instead (rare cases like out-of-memory are exceptions).</li>
+</ul>
+<h4 id="assertions-with-d_assert">Assertions with <code>D_ASSERT</code></h4>
+<ul>
+<li><strong>Catch developer bugs</strong>: Use <code>D_ASSERT</code> to verify internal assumptions and developer errors. Assertions should never be triggered by invalid user input.</li>
+<li><strong>Assert generously with context</strong>: Add assertions whenever an assumption must hold, and always include a brief comment explaining the expected state:
+  <code>cpp
+  // Validate that the target column index exists within bounds
+  D_ASSERT(column_idx &lt; column_count);</code></li>
+</ul>
+<hr />
+<h3 id="ai-usage-policy">AI Usage Policy</h3>
+<p>AI coding assistants are helpful tools, but keep usage disciplined:
+- <strong>Take full ownership</strong>: Never submit AI-generated code that you do not fully understand and cannot explain or debug yourself.
+- <strong>Verify before submitting</strong>: Make sure any generated code adheres to our project conventions, passes tests, and doesn't introduce unwanted dependencies or formatting issues.</p>
 <hr />
 <h2 id="git-collaboration-workflow">Git &amp; Collaboration Workflow</h2>
 <h3 id="branching-strategy">Branching Strategy</h3>
@@ -169,7 +316,17 @@
 </tbody>
 </table>
 <h3 id="commit-message-convention">Commit Message Convention</h3>
-<h3 id="pull-request-pr-checklist">Pull Request (PR) Checklist</h3></div>
+<p>Keep commit messages concise and descriptive using the standard format:
+- <code>feat: add index scan operator</code>
+- <code>fix: handle null values in buffer manager</code>
+- <code>docs: update developer guide conventions</code></p>
+<h3 id="pull-request-pr-checklist">Pull Request (PR) Checklist</h3>
+<p>Before submitting a PR for review, make sure:
+- [ ] Code follows our C++ style and naming conventions (passes <code>clang-tidy</code>).
+- [ ] No commented-out code blocks are left behind.
+- [ ] New functionality and exception paths are covered by tests.
+- [ ] Assertions use <code>D_ASSERT</code> with explanatory comments.
+- [ ] Any AI-assisted code has been fully reviewed, understood, and tested.</p></div>
             </div>
         </div>
 
