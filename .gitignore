@@ -1,2 +1,68 @@
+# Internal planning & notes (keep local, do not publish)
+plan.md
+*.plan.md
 
+# Developer tooling & compilation database
+compile_commands.json
+compile_flags.txt
+.clangd/
+.cache/
+.temp/
+
+# Build artifacts & binaries
+build/
+bin/
+lib/
+out/
+cmake-build-*/
+CMakeUserPresets.json
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+core
+core.*
+
+# Package management
+vcpkg_installed/
+
+# Database data & runtime files
+data/
+*.db
+*.wal
+*.log
+
+# Documentation build output
 site/
+
+# Python virtual environments & bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# IDE & editor configurations
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.cert
+
+# Operating System files
+.DS_Store
+Thumbs.db
+ehthumbs.db
