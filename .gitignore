@@ -1,2 +1,6 @@
-
 site/
+.cache/
+.temp/
+build/
+vcpkg_installed/
+compile_commands.json
