@@ -1,0 +1,5 @@
+[config]
+data_directory = "./data"
+page_size = 4096
+ipv4 = "0.0.0.0"
+port = 8080
