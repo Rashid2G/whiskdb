@@ -138,6 +138,8 @@ Standard development operations can be executed with short unified macros:
 | `cmake build-release` | Configures & compiles in Release mode (`build/release/`) |
 | `cmake run-tests` | Compiles Debug and executes all test suites with verbose failure reporting |
 | `cmake run-tests <regex>` | Runs test suites matching the filter regex (e.g. `cmake run-tests wal`) |
+| `cmake bench` | Configures & builds Release and executes standard persistence benchmark |
+| `cmake bench-compare [branch]` | Compares performance metrics against specified branch (default: `master`) |
 | `cmake clean` | Removes build directories |
 
 *All macros are implemented in [`scripts/macro.sh`](../scripts/macro.sh) and can be extended by adding new command functions.*
