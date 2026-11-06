@@ -18,12 +18,12 @@ if(EXISTS "${PROJECT_SOURCE_DIR}/vcpkg_installed/x64-linux")
   list(APPEND CMAKE_PREFIX_PATH "${PROJECT_SOURCE_DIR}/vcpkg_installed/x64-linux")
 endif()
 
+include(FetchContent)
 find_package(Threads REQUIRED)
 
 # SQLite (amalgamation, compiled into a static lib with C compiler)
 find_package(SQLite3 QUIET)
 if(NOT SQLite3_FOUND)
-  include(FetchContent)
   FetchContent_Declare(sqlite_amalgamation
     URL https://www.sqlite.org/2025/sqlite-amalgamation-3500400.zip
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
@@ -43,7 +43,6 @@ if(asio_FOUND)
 else()
   find_path(ASIO_INCLUDE_DIR asio.hpp)
   if(NOT ASIO_INCLUDE_DIR)
-    include(FetchContent)
     FetchContent_Declare(asio
       GIT_REPOSITORY https://github.com/chriskohlhoff/asio.git
       GIT_TAG asio-1-30-2 GIT_SHALLOW TRUE SOURCE_SUBDIR _header_only_)
@@ -62,7 +61,6 @@ if(tomlplusplus_FOUND)
   add_library(toml_headers INTERFACE)
   target_link_libraries(toml_headers INTERFACE tomlplusplus::tomlplusplus)
 else()
-  include(FetchContent)
   FetchContent_Declare(tomlplusplus
     GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
     GIT_TAG v3.4.0 GIT_SHALLOW TRUE SOURCE_SUBDIR _header_only_)
@@ -72,17 +70,10 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
-# Core library: explicit list of Milestone 1 & 2 sources
+# Core library: every src/**/*.cpp
 # ---------------------------------------------------------------------------
-add_library(whiskdb_core STATIC
-  src/common/logger.cpp
-  src/common/errors.cpp
-  src/engine.cpp
-  src/network/connection_manager.cpp
-  src/network/tcp_session.cpp
-  src/network/network.cpp
-  src/network/protocol.cpp
-)
+file(GLOB_RECURSE WHISKDB_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/src/*.cpp)
+add_library(whiskdb_core STATIC ${WHISKDB_SOURCES})
 target_include_directories(whiskdb_core PUBLIC ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(whiskdb_core PUBLIC asio_headers toml_headers SQLite::SQLite3)
 target_compile_options(whiskdb_core PUBLIC -Wall -Wextra -Wpedantic)
@@ -93,32 +84,25 @@ if(WHISKDB_SANITIZE)
 endif()
 
 # ---------------------------------------------------------------------------
-# Executables
+# Executables (app/*.cpp -> server `whiskdb`, CLI `whisk`)
 # ---------------------------------------------------------------------------
-add_executable(app app/main.cpp)
-target_link_libraries(app PRIVATE whiskdb_core)
-
-add_executable(client app/client.cpp)
-target_link_libraries(client PRIVATE whiskdb_core)
+file(GLOB WHISKDB_APPS CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/app/*.cpp)
+foreach(app_src ${WHISKDB_APPS})
+  get_filename_component(app_name ${app_src} NAME_WE)
+  add_executable(${app_name} ${app_src})
+  target_link_libraries(${app_name} PRIVATE whiskdb_core)
+endforeach()
 
 # ---------------------------------------------------------------------------
-# Tests
+# Tests (tests/test_*.cpp -> one executable + one ctest entry per file)
 # ---------------------------------------------------------------------------
 enable_testing()
-
-set(WHISKDB_TEST_TARGETS
-  test_logger_errors
-  test_framing
-  test_protocol
-  test_network_stress
-)
-
-foreach(test_name ${WHISKDB_TEST_TARGETS})
-  if(EXISTS "${CMAKE_SOURCE_DIR}/tests/${test_name}.cpp")
-    add_executable(${test_name} tests/${test_name}.cpp)
-    target_link_libraries(${test_name} PRIVATE whiskdb_core)
-    target_include_directories(${test_name} PRIVATE ${CMAKE_SOURCE_DIR}/tests)
-    target_compile_options(${test_name} PRIVATE -UNDEBUG)
-    add_test(NAME ${test_name} COMMAND ${test_name} WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
-  endif()
+file(GLOB WHISKDB_TESTS CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tests/test_*.cpp)
+foreach(test_src ${WHISKDB_TESTS})
+  get_filename_component(test_name ${test_src} NAME_WE)
+  add_executable(${test_name} ${test_src})
+  target_link_libraries(${test_name} PRIVATE whiskdb_core)
+  target_include_directories(${test_name} PRIVATE ${CMAKE_SOURCE_DIR}/tests)
+  target_compile_options(${test_name} PRIVATE -UNDEBUG)
+  add_test(NAME ${test_name} COMMAND ${test_name} WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 endforeach()
