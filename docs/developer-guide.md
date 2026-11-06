@@ -128,7 +128,44 @@ AI coding assistants are helpful tools, but keep usage disciplined:
 
 ---
 
+## Build & Test Macros
+
+Standard development operations can be executed with short unified macros:
+
+| Macro | Purpose |
+|---|---|
+| `cmake build-debug` | Configures & compiles in Debug mode (`build/debug/`) |
+| `cmake build-release` | Configures & compiles in Release mode (`build/release/`) |
+| `cmake run-tests` | Compiles Debug and executes all test suites with verbose failure reporting |
+| `cmake run-tests <regex>` | Runs test suites matching the filter regex (e.g. `cmake run-tests wal`) |
+| `cmake clean` | Removes build directories |
+
+*All macros are implemented in [`scripts/macro.sh`](../scripts/macro.sh) and can be extended by adding new command functions.*
+
+---
+
 ## Git & Collaboration Workflow
+
+### Mandatory 5-Step Development Flow
+
+All contributors and AI agents must follow this explicit lifecycle for every task:
+
+1. **Check & Update GitHub Issues**:
+   - Inspect open issues: `gh issue list` and `gh issue view <N>`.
+   - Post an initial comment on the issue acknowledging work has started.
+2. **Branch from `dev`**:
+   - Sync `dev`: `git checkout dev && git pull origin dev`.
+   - Branch: `git checkout -b feat/issue-<N>-<short-slug>`.
+3. **Build & Test with Macros**:
+   - Run `cmake build-debug` and `cmake run-tests`.
+   - Ensure 0 compiler warnings and all tests pass cleanly.
+4. **Conventional Commit & Push**:
+   - `feat(<scope>): <description> (Closes #<N>)`.
+   - `git push -u origin feat/issue-<N>-<short-slug>`.
+5. **Open Pull Request & Close Issues (MANDATORY)**:
+   - Target branch is `dev`: `gh pr create --base dev --head feat/issue-<N>-<short-slug> ...`.
+   - Work is never considered finished until the Pull Request is opened and linked.
+   - Close or reference issues with `Closes #<N>`.
 
 ### Branching Strategy
 
@@ -140,16 +177,17 @@ AI coding assistants are helpful tools, but keep usage disciplined:
 ### Commit Message Convention
 
 Keep commit messages concise and descriptive using the standard format:
-- `feat: add index scan operator`
-- `fix: handle null values in buffer manager`
-- `docs: update developer guide conventions`
+- `feat(sql): add index scan operator (Closes #12)`
+- `fix(wal): handle torn page recovery in replay (Closes #17)`
+- `docs(dev): update developer guide conventions`
 
 ### Pull Request (PR) Checklist
 
 Before submitting a PR for review, make sure:
 - [ ] Code follows our C++ style and naming conventions (passes `clang-tidy`).
-- [ ] No commented-out code blocks are left behind.
-- [ ] New functionality and exception paths are covered by tests.
+- [ ] Code compiles warning-free via `cmake build-debug`.
+- [ ] All tests pass cleanly via `cmake run-tests`.
 - [ ] Assertions use `D_ASSERT` with explanatory comments.
+- [ ] PR targets `dev` and references `Closes #<N>`.
 - [ ] Any AI-assisted code has been fully reviewed, understood, and tested.
 
