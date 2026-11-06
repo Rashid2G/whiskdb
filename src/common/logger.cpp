@@ -1,7 +1,9 @@
 #include "logger.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <ctime>
+#include <deque>
 #include <fstream>
 #include <iostream>
 #include <mutex>
@@ -10,8 +12,12 @@ namespace database {
 
 namespace {
 
+/// Number of recent log lines kept in memory for the LOGS opcode
+constexpr idx_t LOG_RING_CAPACITY = 1024;
+
 std::mutex g_log_mutex;
 std::ofstream g_file_stream;
+std::deque<std::string> g_ring;
 
 constexpr const char* COLOR_RESET = "\033[0m";
 constexpr const char* COLOR_TRACE = "\033[90m";
@@ -102,6 +108,18 @@ void Logger::WriteLog(LogLevel level,
         g_file_stream << "[" << time_str << "] [" << lvl_str << "] ["
                       << file << ":" << line << "] " << message << "\n";
     }
+
+    // Keep the most recent lines in memory so clients can fetch them (whisk logs)
+    if (g_ring.size() >= LOG_RING_CAPACITY) {
+        g_ring.pop_front();
+    }
+    g_ring.push_back(std::format("[{}] [{}] [{}:{}] {}", time_str, lvl_str, file, line, message));
+}
+
+std::vector<std::string> Logger::GetRecentLogs(idx_t max_lines) {
+    std::lock_guard<std::mutex> lock(g_log_mutex);
+    const idx_t count = std::min<idx_t>(max_lines, g_ring.size());
+    return {g_ring.end() - static_cast<std::ptrdiff_t>(count), g_ring.end()};
 }
 
 } // namespace database

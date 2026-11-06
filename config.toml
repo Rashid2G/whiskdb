@@ -3,3 +3,7 @@ data_directory = "./data"
 page_size = 4096
 ipv4 = "0.0.0.0"
 port = 8080
+# strict | group_commit | relaxed | memory_only
+durability_mode = "group_commit"
+# snapshot + reset WAL after this many WAL records (0 = never)
+checkpoint_wal_records = 100000

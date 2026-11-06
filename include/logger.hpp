@@ -9,6 +9,7 @@
 #include <source_location>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace database {
 
@@ -89,6 +90,9 @@ public:
 
     static void CloseLogFile() noexcept;
     static void close_log_file() noexcept { CloseLogFile(); }
+
+    /// Returns up to `max_lines` of the most recent log lines (oldest first), thread-safe.
+    static std::vector<std::string> GetRecentLogs(idx_t max_lines = 100);
 
     static void WriteLog(LogLevel level,
                          std::string_view file,
