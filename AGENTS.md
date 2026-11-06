@@ -4,6 +4,24 @@ WhiskDB is a high-performance, in-memory relational database and WebAssembly app
 
 ---
 
+## 0. Agent Entry Point
+
+**Read order:** this file → `plan.md` → the GitHub issue → the matching skill.
+
+| Skill | Use when |
+|---|---|
+| `whiskdb-issue` | Planning a task or opening an issue |
+| `whiskdb-implementation` | Implementing/changing code and opening a PR |
+| `whiskdb-testing` | Adding/running tests or producing verification evidence |
+| `whiskdb-review` | Reviewing a PR or checking work before merge |
+| `whiskdb-mkdocs` | Updating anything under `docs/` |
+
+**Flow:** issue → branch off `dev` → implement + tests → green `ctest` → PR to `dev` closing the issue.
+
+**Definition of done:** acceptance criteria met, tests added and passing, docs updated when behaviour/config/CLI changed, PR contains real command output and measured numbers (never estimated).
+
+---
+
 ## 1. Core Architectural Principles
 
 1. **SpacetimeDB-Style Developer Workflow:**
@@ -104,3 +122,4 @@ Nothing merges into `dev` or `main` without passing all checks:
 3. **Pull Requests:**
    - Target branch: `dev` (`main`/`master` is reserved for stable milestone releases).
    - Reference `Closes #<N>` in the PR body, include test output, and verify the PR checklist in [docs/developer-guide.md](docs/developer-guide.md).
+4. **Evidence:** Every PR and review states the exact commands run and the real results (test pass counts, measured latency/throughput/memory). Never claim performance without a measurement.
