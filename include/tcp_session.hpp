@@ -61,6 +61,7 @@ private:
 
 private:
     asio::ip::tcp::socket socket_;
+    asio::strand<asio::any_io_executor> strand_;
     ConnectionManager& manager_;
     RequestHandler handler_;
     BinaryRequestHandler binary_handler_;

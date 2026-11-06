@@ -10,6 +10,7 @@ TcpSession::TcpSession(asio::ip::tcp::socket socket,
                        RequestHandler handler,
                        BinaryRequestHandler binary_handler)
     : socket_(std::move(socket)),
+      strand_(socket_.get_executor()),
       manager_(manager),
       handler_(std::move(handler)),
       binary_handler_(std::move(binary_handler)) {
@@ -40,9 +41,11 @@ void TcpSession::Stop() {
 
     LOG_DEBUG("TCP session closed for {}", RemoteEndpointStr());
 
-    asio::error_code ec;
-    socket_.shutdown(asio::ip::tcp::socket::shutdown_both, ec);
-    socket_.close(ec);
+    asio::post(strand_, [this, self = shared_from_this()]() {
+        asio::error_code ec;
+        socket_.shutdown(asio::ip::tcp::socket::shutdown_both, ec);
+        socket_.close(ec);
+    });
 }
 
 bool TcpSession::IsOpen() const {
@@ -67,7 +70,7 @@ void TcpSession::DoReadHeader() {
     asio::async_read(
         socket_,
         asio::buffer(header_buffer_, Framing::HEADER_SIZE),
-        [this, self](const asio::error_code& ec, std::size_t /*bytes_transferred*/) {
+        asio::bind_executor(strand_, [this, self](const asio::error_code& ec, std::size_t /*bytes_transferred*/) {
             if (!ec) {
                 const uint32_t payload_len = Framing::DecodeHeader(header_buffer_);
 
@@ -89,7 +92,7 @@ void TcpSession::DoReadHeader() {
                     manager_.Stop(self);
                 }
             }
-        });
+        }));
 }
 
 void TcpSession::DoReadBody(uint32_t payload_len) {
@@ -105,7 +108,7 @@ void TcpSession::DoReadBody(uint32_t payload_len) {
     asio::async_read(
         socket_,
         asio::buffer(body_buffer_.data(), payload_len),
-        [this, self, payload_len](const asio::error_code& ec, std::size_t /*bytes_transferred*/) {
+        asio::bind_executor(strand_, [this, self, payload_len](const asio::error_code& ec, std::size_t /*bytes_transferred*/) {
             if (!ec) {
                 HandlePayload(std::span<const uint8_t>(body_buffer_.data(), payload_len));
             } else {
@@ -114,7 +117,7 @@ void TcpSession::DoReadBody(uint32_t payload_len) {
                     manager_.Stop(self);
                 }
             }
-        });
+        }));
 }
 
 void TcpSession::HandlePayload(std::span<const uint8_t> request_bytes) {
@@ -163,7 +166,7 @@ void TcpSession::StartWrite() {
     asio::async_write(
         socket_,
         asio::buffer(write_queue_.front()),
-        [this, self](const asio::error_code& ec, std::size_t /*bytes_transferred*/) {
+        asio::bind_executor(strand_, [this, self](const asio::error_code& ec, std::size_t /*bytes_transferred*/) {
             if (!ec) {
                 write_queue_.pop_front();
                 if (!write_queue_.empty()) {
@@ -175,7 +178,7 @@ void TcpSession::StartWrite() {
                     manager_.Stop(self);
                 }
             }
-        });
+        }));
 }
 
 } // namespace database
