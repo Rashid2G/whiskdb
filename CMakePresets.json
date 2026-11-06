@@ -1,26 +1,23 @@
 {
-  "version": 3,
+  "version": 6,
   "cmakeMinimumRequired": {
     "major": 3,
-    "minor": 21,
+    "minor": 25,
     "patch": 0
   },
   "configurePresets": [
     {
       "name": "base",
       "hidden": true,
-      "generator": "Unix Makefiles",
-    	"binaryDir": "${sourceDir}/build/${presetName}",
-      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
-
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
-        "CMAKE_C_COMPILER": "clang",
-        "CMAKE_CXX_COMPILER": "clang++"
+        "FETCHCONTENT_BASE_DIR": "${sourceDir}/build/_deps"
       }
     },
     {
       "name": "debug",
-      "displayName": "Clang Debug",
+      "displayName": "Debug",
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
@@ -28,7 +25,7 @@
     },
     {
       "name": "release",
-      "displayName": "Clang Release",
+      "displayName": "Release",
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
@@ -38,11 +35,89 @@
   "buildPresets": [
     {
       "name": "debug",
+      "displayName": "Build Debug",
+      "configurePreset": "debug"
+    },
+    {
+      "name": "build-debug",
+      "displayName": "Build Debug",
       "configurePreset": "debug"
     },
     {
       "name": "release",
+      "displayName": "Build Release",
       "configurePreset": "release"
+    },
+    {
+      "name": "build-release",
+      "displayName": "Build Release",
+      "configurePreset": "release"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "run-tests",
+      "displayName": "Run Tests",
+      "configurePreset": "debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "test",
+      "displayName": "Run Tests",
+      "configurePreset": "debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "build-debug",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "debug"
+        },
+        {
+          "type": "build",
+          "name": "debug"
+        }
+      ]
+    },
+    {
+      "name": "build-release",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "release"
+        },
+        {
+          "type": "build",
+          "name": "release"
+        }
+      ]
+    },
+    {
+      "name": "run-tests",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "debug"
+        },
+        {
+          "type": "build",
+          "name": "debug"
+        },
+        {
+          "type": "test",
+          "name": "run-tests"
+        }
+      ]
     }
   ]
 }

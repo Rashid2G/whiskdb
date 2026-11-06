@@ -106,3 +106,10 @@ foreach(test_src ${WHISKDB_TESTS})
   target_compile_options(${test_name} PRIVATE -UNDEBUG)
   add_test(NAME ${test_name} COMMAND ${test_name} WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 endforeach()
+
+# Convenient custom target to execute tests: `cmake --build <dir> --target run-tests`
+add_custom_target(run-tests
+  COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+  WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+  COMMENT "Running WhiskDB test suites via CTest..."
+)
