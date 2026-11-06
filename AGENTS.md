@@ -78,11 +78,23 @@ WhiskDB is a high-performance, in-memory relational database and WebAssembly app
 
 ## 5. Strict Testing & Quality Gates
 
+### Build & Test Macros
+Always run builds and tests using the unified macros:
+- **Debug build:** `cmake build-debug` (compiles cleanly into `build/debug`)
+- **Release build:** `cmake build-release` (compiles optimized into `build/release`)
+- **Run all tests:** `cmake run-tests` (builds and executes all test suites via CTest with failure output)
+- **Run specific test suite:** `cmake run-tests <regex>` (e.g., `cmake run-tests wal`, `cmake run-tests sql`)
+- **Clean builds:** `cmake clean`
+
+> [!NOTE]
+> All macros are orchestrated by [`scripts/macro.sh`](file:///home/rashid/whiskdb/scripts/macro.sh). To add new development scripts (e.g., benchmarks, sanitizers, linters), add a `cmd_<name>` function and update the case switch in `scripts/macro.sh`.
+
+### Quality Gates
 Nothing merges into `dev` or `main` without passing all checks:
-1. **Unit & Exception Path Tests:** Every PR must add unit tests in `tests/` covering normal execution, boundary cases, and expected error/exception paths.
-2. **Deterministic End-to-End Tests:** SQL queries, Whisk invocations, trap rollbacks, and WAL crash-recovery scenarios must have automated reproducible tests run via `ctest --output-on-failure`.
+1. **Unit & Exception Path Tests:** Every PR must add unit tests in `tests/` covering normal execution, boundary cases, and expected error/exception paths. Run `cmake run-tests` to verify 100% pass rate.
+2. **Deterministic End-to-End Tests:** SQL queries, Whisk invocations, trap rollbacks, and WAL crash-recovery scenarios must pass via `cmake run-tests`.
 3. **Compiler & Sanitizer Cleanliness:**
-   - Must compile cleanly on Ubuntu 24.04+ and Debian Trixie (`x86_64`) with `-Wall -Wextra -Wpedantic`.
+   - Must compile cleanly on Ubuntu 24.04+ and Debian Trixie (`x86_64`) with `-Wall -Wextra -Wpedantic` (0 warnings).
    - Must pass AddressSanitizer (`ASAN`) and UndefinedBehaviorSanitizer (`UBSAN`) with zero leaks or UB.
    - Must adhere to `clang-tidy` naming and style checks.
 
@@ -95,12 +107,58 @@ Nothing merges into `dev` or `main` without passing all checks:
 
 ---
 
-## 7. Git, Issue & Pull Request Workflow
+## 7. Mandatory Development Flow (Issues & Pull Requests)
 
-1. **1 Issue = 1 Branch = 1 PR:**
-   - Every task starts as a tracked GitHub Issue with clear Acceptance Criteria and Test Requirements.
-   - Branch off `dev`: `feat/issue-<N>-<short-slug>`, `fix/issue-<N>-<short-slug>`, or `docs/issue-<N>-<short-slug>`.
-2. **Commits:** Conventional commits (`feat: ...`, `fix: ...`, `refactor: ...`, `test: ...`, `docs: ...`).
-3. **Pull Requests:**
-   - Target branch: `dev` (`main`/`master` is reserved for stable milestone releases).
-   - Reference `Closes #<N>` in the PR body, include test output, and verify the PR checklist in [docs/developer-guide.md](docs/developer-guide.md).
+Every agent MUST adhere to this strict 5-step development lifecycle. **Never finish a turn or report work complete without verifying tests and opening the Pull Request.**
+
+```
+[GitHub Issue] ──> [Branch off dev] ──> [Code & Test] ──> [Commit & Push] ──> [Open Pull Request & Link Issue]
+```
+
+### Step 1: Check & Update GitHub Issues (MANDATORY START)
+- Before writing any code, check open issues: `gh issue list`.
+- Inspect the target issue: `gh issue view <issue-number>`.
+- If an issue does not exist for the assigned task, create one first:
+  `gh issue create --title "<type>(<scope>): <summary>" --body "<details>" --label "..."`.
+- Post a comment on the issue stating that work has started:
+  `gh issue comment <issue-number> --body "Starting work on this issue in branch feat/issue-<issue-number>-<slug>."`.
+
+### Step 2: Create a Dedicated Feature Branch off `dev`
+- Always synchronize `dev` first:
+  ```bash
+  git checkout dev && git pull origin dev
+  ```
+- Create and switch to the task branch:
+  ```bash
+  git checkout -b feat/issue-<N>-<short-slug>
+  # (or fix/issue-<N>-<short-slug>, docs/issue-<N>-<short-slug>)
+  ```
+- **Rule: 1 Issue = 1 Branch = 1 PR.** Never bundle unrelated changes across issues.
+
+### Step 3: Implement, Build, and Run Tests
+- Use the quick macros:
+  ```bash
+  cmake build-debug
+  cmake run-tests
+  ```
+- Ensure zero compiler warnings and all tests pass cleanly before proceeding to commit.
+
+### Step 4: Conventional Commit & Push
+- Use conventional commit messages referencing the issue:
+  ```bash
+  git add <changed-files>
+  git commit -m "feat(<scope>): <description> (Closes #<N>)"
+  git push -u origin feat/issue-<N>-<short-slug>
+  ```
+
+### Step 5: Open Pull Request & Link Issue (MANDATORY COMPLETION)
+- **CRITICAL:** An agent has NOT completed their task until the Pull Request is created on GitHub. Never stop at a local commit or branch push.
+- Target branch is ALWAYS `dev`:
+  ```bash
+  gh pr create --base dev --head feat/issue-<N>-<short-slug> \
+    --title "feat(<scope>): <short description>" \
+    --body "## Summary\n<brief explanation of changes>\n\n## Verification\n- \`cmake run-tests\` passed\n\nCloses #<N>"
+  ```
+- If the tool `link_pull_request` is available in your agent harness, immediately call `link_pull_request` with the new PR URL.
+- Once merged or verified, ensure the associated issue is closed:
+  `gh issue close <N> --comment "Closed by PR #<PR-number>."`.
