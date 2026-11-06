@@ -64,6 +64,18 @@ cmd_run_tests() {
   "$CTEST_BIN" --test-dir "build/debug" --output-on-failure -R "$filter" "$@"
 }
 
+cmd_bench() {
+  cmd_build_release
+  echo "==> Running WhiskDB Persistence Benchmark..."
+  "build/release/whisk_bench" "$@"
+}
+
+cmd_bench_compare() {
+  local target="${1:-master}"
+  shift || true
+  python3 "$REPO_ROOT/scripts/benchmark_branch.py" --target "$target" "$@"
+}
+
 cmd_clean() {
   echo "==> Cleaning build artifacts..."
   rm -rf build/debug build/release
@@ -76,6 +88,8 @@ WhiskDB Macro Commands:
   build-debug    Configure & build in Debug mode (build/debug)
   build-release  Configure & build in Release mode (build/release)
   run-tests      Build Debug & execute all ctest suites with diagnostics
+  bench          Build Release & run WhiskDB persistence benchmark
+  bench-compare  Run benchmark comparison against specified branch (default: master)
   clean          Remove build directories
 
 Adding New Macros:
@@ -96,6 +110,12 @@ case "$SUBCOMMAND" in
     ;;
   run-tests|test|tests)
     cmd_run_tests "$@"
+    ;;
+  bench|benchmark)
+    cmd_bench "$@"
+    ;;
+  bench-compare|benchmark-compare)
+    cmd_bench_compare "$@"
     ;;
   clean)
     cmd_clean "$@"

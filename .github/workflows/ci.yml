@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, dev]
+  pull_request:
+    branches: [main, master, dev]
+
+jobs:
+  test:
+    name: Build & Test
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++-14 libsqlite3-dev
+
+      - name: Configure Debug Build
+        env:
+          CC: gcc-14
+          CXX: g++-14
+        run: |
+          cmake -S . -B build/debug -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=gcc-14 \
+            -DCMAKE_CXX_COMPILER=g++-14
+
+      - name: Build Debug Targets
+        run: |
+          cmake --build build/debug -j$(nproc)
+
+      - name: Run CTest Test Suite
+        run: |
+          ctest --test-dir build/debug --output-on-failure --timeout 120
+
+      - name: Configure Release Build
+        env:
+          CC: gcc-14
+          CXX: g++-14
+        run: |
+          cmake -S . -B build/release -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=gcc-14 \
+            -DCMAKE_CXX_COMPILER=g++-14
+
+      - name: Build Release Targets
+        run: |
+          cmake --build build/release -j$(nproc)
+
+      - name: Verify Executables Smoke Test
+        run: |
+          ./build/release/whisk --help
+          ./build/release/whiskdb --help
+          ./build/release/whisk_bench --quick --mode memory_only
