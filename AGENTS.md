@@ -4,6 +4,24 @@ WhiskDB is a high-performance, in-memory relational database and WebAssembly app
 
 ---
 
+## 0. Agent Entry Point
+
+**Read order:** this file → `plan.md` → the GitHub issue → the matching skill.
+
+| Skill | Use when |
+|---|---|
+| `whiskdb-issue` | Planning a task or opening an issue |
+| `whiskdb-implementation` | Implementing/changing code and opening a PR |
+| `whiskdb-testing` | Adding/running tests or producing verification evidence |
+| `whiskdb-review` | Reviewing a PR or checking work before merge |
+| `whiskdb-mkdocs` | Updating anything under `docs/` |
+
+**Flow:** issue → branch off `dev` → implement + tests → green `ctest` → PR to `dev` closing the issue.
+
+**Definition of done:** acceptance criteria met, tests added and passing, docs updated when behaviour/config/CLI changed, PR contains real command output and measured numbers (never estimated).
+
+---
+
 ## 1. Core Architectural Principles
 
 1. **SpacetimeDB-Style Developer Workflow:**
@@ -110,6 +128,12 @@ Nothing merges into `dev` or `main` without passing all checks:
 ## 7. Mandatory Development Flow (Issues & Pull Requests)
 
 Every agent MUST adhere to this strict 5-step development lifecycle. **Never finish a turn or report work complete without verifying tests and opening the Pull Request.**
+
+**Core rules:**
+- **1 Issue = 1 Branch = 1 PR:** Every task starts as a tracked GitHub Issue with clear Acceptance Criteria and Test Requirements.
+- **Commits:** Conventional commits (`feat: ...`, `fix: ...`, `refactor: ...`, `test: ...`, `docs: ...`).
+- **Target branch:** Always `dev` (`main`/`master` is reserved for stable milestone releases).
+- **Evidence:** Every PR and review states the exact commands run and the real results (test pass counts, measured latency/throughput/memory). Never claim performance without a measurement.
 
 ```
 [GitHub Issue] ──> [Branch off dev] ──> [Code & Test] ──> [Commit & Push] ──> [Open Pull Request & Link Issue]
