@@ -39,6 +39,10 @@ public:
         }
 
         port_ = static_cast<uint16_t>(config_["config"]["port"].value_or(8080));
+
+        durability_mode_ = config_["config"]["durability_mode"].value_or(std::string("group_commit"));
+        checkpoint_wal_records_ = static_cast<idx_t>(
+            config_["config"]["checkpoint_wal_records"].value_or(100000));
     }
 
 public:
@@ -54,12 +58,20 @@ public:
     uint16_t Port() const noexcept { return port_; }
     uint16_t port() const noexcept { return port_; }
 
+    /// Raw durability mode text (strict | group_commit | relaxed | memory_only), validated by Engine
+    const std::string& DurabilityModeName() const noexcept { return durability_mode_; }
+
+    /// Take a snapshot and reset the WAL after this many WAL records (0 disables auto-checkpoint)
+    idx_t CheckpointWalRecords() const noexcept { return checkpoint_wal_records_; }
+
 private:
     toml::table config_;
     std::string db_file_path_{"./data"};
     uint16_t page_size_{4096};
     std::string host_{"0.0.0.0"};
     uint16_t port_{8080};
+    std::string durability_mode_{"group_commit"};
+    idx_t checkpoint_wal_records_{100000};
 };
 
 } // namespace database
