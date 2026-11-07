@@ -205,8 +205,17 @@ Use conventional commit prefixes:
 - `test(scope): add test coverage`
 
 ### 5. Pull Request Submission
-- Open the PR targeting `dev`:
+- For engine and feature code, open the PR targeting `dev`:
   ```sh
   gh pr create --base dev --head feat/issue-<issue-number>-<slug> --title "feat(scope): ..." --body "..."
   ```
 - Reference the resolved issue (`Closes #N`) in the PR description. Work is complete only after the PR is submitted.
+
+### 6. Documentation Branching & Deployment (`gh-pages`)
+Documentation updates (`docs/`, `mkdocs.yml`) belong strictly to their dedicated branch (`gh-pages`) and are published directly using `mkdocs gh-deploy`:
+```sh
+mkdocs build --strict    # Verify build integrity locally
+mkdocs gh-deploy         # Deploy directly to the gh-pages branch
+```
+Do **not** target or merge documentation-only updates into the `dev` branch.
+
