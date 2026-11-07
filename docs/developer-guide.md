@@ -1,195 +1,212 @@
-# Developer Guide
+# WhiskDB Developer Guide
 
-Welcome to the WhiskDB Developer Guide. This document defines the engineering standards, architecture, and collaboration workflow for all team members contributing to the project.
+The WhiskDB Developer Guide specifies the normative engineering standards, internal subsystem architecture, coding conventions, and collaboration workflow for all team members and automated agents contributing to WhiskDB.
 
 ---
 
-## External Libraries
+## 1. External Libraries & Ecosystem
 
-WhiskDB leverages external C++ libraries for low-level networking, protocols, and performance-critical operations:
+WhiskDB relies on focused, lightweight dependencies managed via **vcpkg** or CMake's **FetchContent**:
 
-| Library | Component / Header | Purpose | Description |
+| Library | Header / Component | Purpose | Integration Method |
 |---|---|---|---|
-| **[Boost.Beast](https://www.boost.org/doc/libs/release/libs/beast/)** | `boost/beast` (`#include <boost/beast.hpp>`) | Networking & WebSocket | Provides HTTP and WebSocket protocol implementations built on top of **Boost.Asio**. Powers WhiskDB's client connection handling, real-time reactive subscriptions, and network communication layer. |
+| **[Standalone Asio](https://think-async.com/Asio/)** | `asio.hpp` (`asio_headers`) | Asynchronous non-blocking network I/O, event loops, TCP server and client socket handling | vcpkg / CMake FetchContent |
+| **[SQLite3 Amalgamation](https://www.sqlite.org/)** | `sqlite3.h` (`sqlite3_static`) | In-memory relational storage engine, SQL parsing, B-tree indexes, and ACID savepoint management | Bundled C static library |
+| **[toml++](https://marzer.github.io/tomlplusplus/)** | `toml++/toml.hpp` (`toml_headers`) | Header-only C++20/23 TOML configuration file parser for `config.toml` | vcpkg / CMake FetchContent |
+| **[Wasmtime C API](https://wasmtime.dev/)** | `wasm.h`, `wasmtime.h` | Sandboxed WebAssembly runtime for server-side Whisk module execution *(in progress)* | System / Vendor archive |
 
-### Boost.Beast Details
-
-- **Header & Namespace**: `<boost/beast.hpp>`, `boost::beast` (with `boost::beast::websocket`)
-- **Underlying I/O Engine**: Built on top of **Boost.Asio** (`boost::asio`) for scalable, asynchronous, non-blocking network I/O.
-- **Key Responsibilities**:
-    - **WebSocket Protocol Handling**: Manages full RFC 6455 compliance, including handshake negotiation, framing, binary and text messages, and ping/pong keep-alives.
-    - **Real-Time Client Subscriptions**: Powers the network communication layer that broadcasts data mutations and subscription updates to connected clients with low latency.
-    - **Zero-Copy Buffer Integration**: Interoperates with memory buffers efficiently to match WhiskDB's in-engine execution model.
-- **Integration & Build**: Managed via **vcpkg** (`vcpkg.json`) and linked in `CMakeLists.txt` via CMake's `find_package(Boost REQUIRED)`.
+!!! note "Zero Heavy Frameworks"
+    WhiskDB avoids heavy all-in-one frameworks. All network protocols use length-prefixed binary frames built on top of standalone Asio rather than HTTP or heavy WebSocket stacks.
 
 ---
 
-## Coding Standards & Conventions
+## 2. Coding Standards & Conventions (C++23)
 
-To maintain a clean and reliable codebase across the team, all contributors should follow these conventions:
-
-### C++ Style
-
-#### Memory & Pointers
-- **Smart pointers only**: Never use raw `malloc`, `new`, or `delete`. Use smart pointers for all dynamic allocations.
-- **Prefer `std::unique_ptr`**: Default to `std::unique_ptr` for exclusive ownership. Use `std::shared_ptr` only when multiple owners truly need shared lifetime management.
-
-#### Types & Constants
-- **Fixed-width integers**: Use explicit fixed-width integers (`int8_t`, `int16_t`, `int32_t`, `int64_t`, `uint8_t`, `uint16_t`, `uint32_t`, `uint64_t`) instead of standard types like `int`, `long`, or `uint`.
-- **Indices and offsets**: Use `idx_t` instead of `size_t` for counts, offsets, and collection indices.
-- **Scoped enums (`enum class`)**: Always use `enum class` rather than plain C-style enums. Explicitly specify the underlying storage type (e.g., `: uint8_t`) only when the enum is serialized.
-- **No magic numbers**: Name literal values using `constexpr` variables to provide clear meaning and context.
-
-#### Const & References
-- **Use `const` whenever possible**: Mark variables, member functions, and parameters `const` by default if they should not be modified.
-- **Pass by reference**: Favor references over raw pointers for function arguments.
-- **Const references for non-trivial types**: Pass objects that are expensive to copy (e.g., `std::vector`, `std::string`) as `const &`.
-
-#### Functions & Control Flow
-- **Return early**: Keep nesting shallow and avoid deep `if`/`else` branches by returning early.
-- **Always use braces**: Use curly braces `{}` for all `if` statements and loops, even for single-line bodies.
-- **Range-based loops**: Prefer modern range-based `for` loops whenever iterating:
-  ```cpp
-  for (const auto& item : items) {
-      // process item
-  }
-  ```
-- **Virtual overrides**: When overriding a virtual method, omit the `virtual` keyword and explicitly use `override` or `final`.
-
-#### Namespaces
-- **No namespace imports**: Never write `using namespace std;` or import entire namespaces into source or header files.
-- **Core namespace**: All functions and classes under the core engine (`src/`) must reside inside the `database` namespace.
-
-#### Class Layout
-Keep class structures consistent and easy to scan:
-1. Public constructor(s) and public member variables.
-2. Public member functions.
-3. Private helper functions.
-4. Private member variables.
-
-```cpp
-class MyClass {
-public:
-    MyClass();
-
-    int my_public_variable;
-
-public:
-    void MyFunction();
-
-private:
-    void MyPrivateFunction();
-
-private:
-    int my_private_variable;
-};
-```
-
----
+### Namespace Rule
+All engine code under `src/` and `include/` must reside inside `namespace database`. Never write `using namespace std;` in any header or translation unit.
 
 ### Naming Conventions
 
-Keep names clear and descriptive. Avoid single-letter variables except for standard loop counters in simple, non-nested loops.
+WhiskDB follows DuckDB-inspired naming conventions, partially verified via `clang-tidy`:
 
-| Target | Convention | Example |
-|---|---|---|
-| **Files** | Lowercase with underscores (`snake_case`) | `abstract_operator.cpp` |
-| **Types** (classes, structs, enums, aliases) | Capitalized words (`PascalCase`) | `BaseColumn`, `TupleBuffer` |
-| **Variables & Members** | Lowercase with underscores (`snake_case`) | `chunk_size`, `buffer_idx` |
-| **Functions & Methods** | Capitalized words (`PascalCase`) | `GetChunk()`, `ExecutePlan()` |
-| **Loop Indices** | Meaningful names in nested loops | `column_idx`, `row_idx` (`i` is only allowed in single loops) |
+| Target | Convention | Example | Notes |
+|---|---|---|---|
+| **Files** | `snake_case` | `wal_manager.cpp`, `sql_engine.hpp` | Match class concept name |
+| **Types** (Classes, Structs, Enums, Aliases) | `PascalCase` | `WhiskClient`, `WalManager`, `DurabilityMode` | Concrete and unambiguous |
+| **Functions & Methods** | `PascalCase` | `ExecuteQuery()`, `AppendRecord()`, `Recover()` | Verb-noun phrases |
+| **Variables & Members** | `snake_case` | `page_size`, `write_mutex_`, `is_active_` | Private members use trailing underscore |
+| **Loop Indices** | Meaningful names in nested loops | `row_idx`, `col_idx`, `frame_idx` | `i` is allowed only in single, flat loops |
 
-*(Note: These naming guidelines are partially enforced automatically by `clang-tidy`.)*
+### Types & Memory Management
 
----
-
-### Error Handling & Assertions
-
-#### Exceptions vs. Return Values
-- **Exceptions are for hard failures**: Use exceptions only when an error terminates a query (such as SQL syntax errors, missing tables, or resource exhaustion).
-- **Return values for normal flow**: If an error is an expected situation that normal execution can handle, return a status or result code instead of throwing.
-- **Test exception paths**: Always write unit tests that trigger expected exceptions. If an error condition cannot be reproduced in a test, consider whether it should be an invariant assertion instead (rare cases like out-of-memory are exceptions).
-
-#### Assertions with `D_ASSERT`
-- **Catch developer bugs**: Use `D_ASSERT` to verify internal assumptions and developer errors. Assertions should never be triggered by invalid user input.
-- **Assert generously with context**: Add assertions whenever an assumption must hold, and always include a brief comment explaining the expected state:
+- **No Raw Allocation**: Never invoke raw `new`, `delete`, or `malloc`. Use smart pointers for dynamic allocation.
+- **Ownership Semantics**: Default to `std::unique_ptr` for exclusive resource ownership. Use `std::shared_ptr` only when multiple distinct subsystems require shared lifetime.
+- **Indices and Offsets**: Use `idx_t` (`uint64_t`) instead of raw `size_t` for counts, offsets, and collection indices.
+- **Fixed-Width Integers**: Use explicit types (`int8_t`..`int64_t`, `uint8_t`..`uint64_t`) instead of ambiguous standard types like `int` or `long`.
+- **Scoped Enums**: Always declare `enum class`. Specify the underlying storage type (e.g., `: uint8_t`) when the enum is serialized over the wire or to disk:
   ```cpp
-  // Validate that the target column index exists within bounds
-  D_ASSERT(column_idx < column_count);
+  enum class Opcode : uint8_t {
+      Ping = 0x01,
+      SqlQuery = 0x02,
+      WhiskPublish = 0x03,
+      WhiskCall = 0x04
+  };
+  ```
+- **Constants**: Replace magic numbers with named `constexpr` constants.
+
+### Control Flow & Class Layout
+
+- **Explicit Braces**: Always use `{}` braces for `if`, `else`, `for`, and `while` statements, even for single-line bodies.
+- **Return Early**: Guard clauses and early returns keep indentation shallow.
+- **Virtual Overrides**: Omit the `virtual` keyword on overriding member functions; use `override` or `final` exclusively.
+- **Class Section Layout**: Order class definitions consistently:
+  ```cpp
+  class ExampleManager {
+  public:
+      // 1. Constructors & public member variables
+      ExampleManager();
+      ~ExampleManager();
+
+  public:
+      // 2. Public member functions
+      Result<void> Initialize();
+
+  private:
+      // 3. Private helper functions
+      Result<void> FlushBuffer();
+
+  private:
+      // 4. Private member variables
+      std::string path_;
+      idx_t buffer_size_ = 0;
+  };
   ```
 
 ---
 
-### AI Usage Policy
+## 3. Error Handling & Invariant Policy
 
-AI coding assistants are helpful tools, but keep usage disciplined:
-- **Take full ownership**: Never submit AI-generated code that you do not fully understand and cannot explain or debug yourself.
-- **Verify before submitting**: Make sure any generated code adheres to our project conventions, passes tests, and doesn't introduce unwanted dependencies or formatting issues.
+WhiskDB enforces a strict distinction between operational errors and developer bugs:
+
+### Operational Errors (`Result<T>` & `ErrorCode`)
+Expected runtime failures—such as network disconnects, invalid SQL syntax, table constraint violations, or missing files—must return `Result<T>` or status codes. Do not throw exceptions for expected operational flow.
+
+```cpp
+Result<QueryResult> result = client.Query("SELECT * FROM invalid_table;");
+if (!result) {
+    LOG_WARN("Query failed: {}", result.error().Message());
+    return result.error();
+}
+```
+
+### Invariant Assertions (`D_ASSERT`)
+Use `D_ASSERT(condition)` generously to verify internal assumptions and developer invariants. Every `D_ASSERT` must include an explanatory comment on the preceding line:
+
+```cpp
+// Ensure the payload does not exceed the maximum allowable wire frame size
+D_ASSERT(payload_len <= Framing::MAX_PAYLOAD_SIZE);
+```
+
+`D_ASSERT` checks are active in Debug builds and must **never** be triggered by external user input.
+
+### Fatal Failures
+Exceptions are reserved strictly for unrecoverable system failures, such as memory allocation exhaustion or unrecoverable disk corruption.
 
 ---
 
-## Build & Test Macros
+## 4. Internal Subsystem Architecture
 
-Standard development operations can be executed with short unified macros:
+WhiskDB is composed of four modular internal subsystems:
 
-| Macro | Purpose |
-|---|---|
-| `cmake build-debug` | Configures & compiles in Debug mode (`build/debug/`) |
-| `cmake build-release` | Configures & compiles in Release mode (`build/release/`) |
-| `cmake run-tests` | Compiles Debug and executes all test suites with verbose failure reporting |
-| `cmake run-tests <regex>` | Runs test suites matching the filter regex (e.g. `cmake run-tests wal`) |
-| `cmake bench` | Configures & builds Release and executes standard persistence benchmark |
-| `cmake bench-compare [branch]` | Compares performance metrics against specified branch (default: `master`) |
-| `cmake clean` | Removes build directories |
+```
+┌─────────────────────────────────────────────────────────────┐
+│                       whiskdb core                          │
+├─────────────────┬─────────────────┬─────────────────────────┤
+│ Network Layer   │ SQL Engine      │ Storage & Durability    │
+├─────────────────┼─────────────────┼─────────────────────────┤
+│ - Framing       │ - SQLite3 :mem: │ - WalManager            │
+│ - Protocol      │ - Cache         │ - PosixFile             │
+│ - Asio Server   │ - ValueCodec    │ - SnapshotManager       │
+│ - TcpClient     │ - Savepoints    │ - CRC32 Verifier        │
+└─────────────────┴─────────────────┴─────────────────────────┘
+```
 
-*All macros are implemented in [`scripts/macro.sh`](../scripts/macro.sh) and can be extended by adding new command functions.*
+### 1. Network Layer (`include/network/`, `src/network/`)
+- **Framing (`Framing`)**: All packets use a 4-byte big-endian length prefix. Frames larger than `MAX_PAYLOAD_SIZE` (64 MB) are rejected.
+- **Protocol (`Protocol`, `Request`, `Response`)**: Requests include an `Opcode` (1 byte) followed by payload bytes. Responses include a status code (`ErrorCode`, 2 bytes), execution duration in microseconds (`exec_us`, 8 bytes), and response payload.
+- **Asio Server (`Server`, `TcpSession`)**: Scalable, non-blocking asynchronous TCP server running on standalone Asio. Sessions maintain dedicated receive buffers to minimize allocations.
+
+### 2. SQL Engine Layer (`include/sql/`, `src/sql/`)
+- **Engine Core (`SqlEngine`)**: Wraps an in-memory SQLite3 handle (`:memory:`).
+- **Statement Cache (`StatementCache`)**: Prepared statement cache keyed by SQL text hash, eliminating parsing and compilation overhead on repetitive queries.
+- **Value Codec (`ValueCodec`)**: High-speed binary serializer and deserializer for SQL data types (`ValueType`: `Null`, `Int64`, `Double`, `Text`, `Blob`), facilitating zero-copy decoding across wire packets.
+- **Transaction Guard (`TransactionGuard`)**: Manages nested SQLite `SAVEPOINT` transactions with automatic rollback on error.
+
+### 3. Storage & Durability Layer (`include/storage/`, `src/storage/`)
+- **Write-Ahead Log (`WalManager`)**: Appends binary transaction records (`WalRecordType::SqlStatement`) protected by CRC32 checksums to `./data/db.wal`.
+- **Durability Modes (`DurabilityMode`)**: Configurable flush behavior (`Strict`, `GroupCommit`, `Relaxed`, `MemoryOnly`).
+- **File I/O (`PosixFile`)**: RAII POSIX file descriptor wrapper managing `open`, `pwrite`, `pread`, and `fdatasync`.
+- **Snapshot Manager (`SnapshotManager`)**: Serializes full database state to disk checkpoints (`snapshot.db`) and safely resets the WAL log upon reaching record limits.
+
+### 4. Client SDK & CLI Layer (`include/client/`, `src/client/`, `app/`)
+- **WhiskClient (`WhiskClient`)**: Native C++ client handling socket connection, handshake, query execution, and error unwrapping.
+- **Table Formatter (`FormatResultTable`)**: ASCII box-drawing table renderer with automatic column width calculation and execution metrics.
+- **Interactive REPL (`app/whisk.cpp`)**: Interactive terminal client with multi-line statement continuation (`SplitStatements`), dot command execution (`.help`, `.ping`, `.logs`, `.snapshot`), and ANSI color error highlighting.
 
 ---
 
-## Git & Collaboration Workflow
+## 5. Build & Test Macros
 
-### Mandatory 5-Step Development Flow
+WhiskDB provides unified development macros orchestrated by `scripts/macro.sh`:
 
-All contributors and AI agents must follow this explicit lifecycle for every task:
+| Macro | Description | Output Artifacts |
+|---|---|---|
+| `cmake build-debug` | Configures and builds all targets with Debug symbols and `-Wall -Wextra -Wpedantic` | `build/debug/` |
+| `cmake build-release` | Configures and builds all targets with full `-O3` compiler optimizations | `build/release/` |
+| `cmake run-tests` | Compiles Debug target and executes all test suites via CTest with verbose failure logging | Full CTest report |
+| `cmake run-tests <regex>` | Runs only test suites matching the specified regex pattern (e.g., `cmake run-tests wal`) | Filtered test results |
+| `cmake bench` | Builds Release and runs standard persistence and throughput benchmarks | Benchmark metrics |
+| `cmake clean` | Removes all build directories (`build/debug/`, `build/release/`) | Clean workspace |
 
-1. **Check & Update GitHub Issues**:
-   - Inspect open issues: `gh issue list` and `gh issue view <N>`.
-   - Post an initial comment on the issue acknowledging work has started.
-2. **Branch from `dev`**:
-   - Sync `dev`: `git checkout dev && git pull origin dev`.
-   - Branch: `git checkout -b feat/issue-<N>-<short-slug>`.
-3. **Build & Test with Macros**:
-   - Run `cmake build-debug` and `cmake run-tests`.
-   - Ensure 0 compiler warnings and all tests pass cleanly.
-4. **Conventional Commit & Push**:
-   - `feat(<scope>): <description> (Closes #<N>)`.
-   - `git push -u origin feat/issue-<N>-<short-slug>`.
-5. **Open Pull Request & Close Issues (MANDATORY)**:
-   - Target branch is `dev`: `gh pr create --base dev --head feat/issue-<N>-<short-slug> ...`.
-   - Work is never considered finished until the Pull Request is opened and linked.
-   - Close or reference issues with `Closes #<N>`.
+---
 
-### Branching Strategy
+## 6. Git & Collaboration Workflow
 
-| Branch | Purpose |
-|---|---|
-| `main` | Production-ready, stable milestone releases. Protected. |
-| `dev` | Active integration branch. All features merge here first. |
+Every contributor and agent must follow WhiskDB's mandatory 5-step development lifecycle:
 
-### Commit Message Convention
+```
+[GitHub Issue] ──> [Branch off dev] ──> [Code & Test] ──> [Commit & Push] ──> [Open Pull Request]
+```
 
-Keep commit messages concise and descriptive using the standard format:
-- `feat(sql): add index scan operator (Closes #12)`
-- `fix(wal): handle torn page recovery in replay (Closes #17)`
-- `docs(dev): update developer guide conventions`
+### 1. Check & Update GitHub Issues
+- Inspect the target issue before writing code: `gh issue view <issue-number>`.
+- Post an acknowledgement comment stating that work has begun in the feature branch.
 
-### Pull Request (PR) Checklist
+### 2. Dedicated Feature Branch off `dev`
+- Always branch from the latest `dev` branch:
+  ```sh
+  git checkout dev
+  git pull origin dev
+  git checkout -b feat/issue-<issue-number>-<slug>
+  ```
 
-Before submitting a PR for review, make sure:
-- [ ] Code follows our C++ style and naming conventions (passes `clang-tidy`).
-- [ ] Code compiles warning-free via `cmake build-debug`.
-- [ ] All tests pass cleanly via `cmake run-tests`.
-- [ ] Assertions use `D_ASSERT` with explanatory comments.
-- [ ] PR targets `dev` and references `Closes #<N>`.
-- [ ] Any AI-assisted code has been fully reviewed, understood, and tested.
+### 3. Build & Test Verification
+- Ensure zero compiler warnings and 100% test pass rate:
+  ```sh
+  cmake build-debug
+  cmake run-tests
+  ```
 
+### 4. Conventional Commits
+Use conventional commit prefixes:
+- `feat(scope): add feature description (Closes #N)`
+- `fix(scope): fix bug description (Closes #N)`
+- `docs(scope): update documentation`
+- `test(scope): add test coverage`
+
+### 5. Pull Request Submission
+- Open the PR targeting `dev`:
+  ```sh
+  gh pr create --base dev --head feat/issue-<issue-number>-<slug> --title "feat(scope): ..." --body "..."
+  ```
+- Reference the resolved issue (`Closes #N`) in the PR description. Work is complete only after the PR is submitted.
