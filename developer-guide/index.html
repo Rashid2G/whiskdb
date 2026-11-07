@@ -424,11 +424,18 @@
 - <code>test(scope): add test coverage</code></p>
 <h3 id="5-pull-request-submission">5. Pull Request Submission<a class="headerlink" href="#5-pull-request-submission" title="Permanent link">#</a></h3>
 <ul>
-<li>Open the PR targeting <code>dev</code>:
+<li>For engine and feature code, open the PR targeting <code>dev</code>:
   <code>sh
   gh pr create --base dev --head feat/issue-&lt;issue-number&gt;-&lt;slug&gt; --title "feat(scope): ..." --body "..."</code></li>
 <li>Reference the resolved issue (<code>Closes #N</code>) in the PR description. Work is complete only after the PR is submitted.</li>
-</ul></div>
+</ul>
+<h3 id="6-documentation-branching-deployment-gh-pages">6. Documentation Branching &amp; Deployment (<code>gh-pages</code>)<a class="headerlink" href="#6-documentation-branching-deployment-gh-pages" title="Permanent link">#</a></h3>
+<p>Documentation updates (<code>docs/</code>, <code>mkdocs.yml</code>) belong strictly to their dedicated branch (<code>gh-pages</code>) and are published directly using <code>mkdocs gh-deploy</code>:</p>
+<div class="codehilite"><pre><span></span><code>mkdocs<span class="w"> </span>build<span class="w"> </span>--strict<span class="w">    </span><span class="c1"># Verify build integrity locally</span>
+mkdocs<span class="w"> </span>gh-deploy<span class="w">         </span><span class="c1"># Deploy directly to the gh-pages branch</span>
+</code></pre></div>
+
+<p>Do <strong>not</strong> target or merge documentation-only updates into the <code>dev</code> branch.</p></div>
             </div>
         </div>
 
