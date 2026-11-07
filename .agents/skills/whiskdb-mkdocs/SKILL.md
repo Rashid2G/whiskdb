@@ -1,6 +1,6 @@
 ---
 name: WhiskDB MkDocs
-description: Update WhiskDB documentation — explains what each MkDocs page is for, text styling standards inspired by industry-standard docs (Stripe, DuckDB, Tailwind), and how to build and verify docs. Use when adding or changing docs, config tables, CLI usage, C++ SDK guides, or architecture notes.
+description: Update WhiskDB documentation — explains what each MkDocs page is for, text styling standards inspired by industry-standard docs (Stripe, DuckDB, Tailwind), and how to build, verify, and deploy docs to the dedicated gh-pages branch.
 ---
 
 # WhiskDB MkDocs
@@ -15,6 +15,17 @@ description: Update WhiskDB documentation — explains what each MkDocs page is 
 | `docs/user-guide.md` | User-facing usage: `whiskdb` server options, `whisk` CLI reference & REPL, C++ Client SDK (`WhiskClient`), query handling, configuration | Internal contributor policies & contributor PR checklists |
 
 Navigation lives in `mkdocs.yml`. Add a page there only if a new top-level page is truly needed.
+
+---
+
+## Branching & Deployment Rules (CRITICAL)
+
+> [!IMPORTANT]
+> **Documentation belongs strictly to its own branch: `gh-pages`**.
+>
+> - **Never target `dev`**: Documentation updates must **never** be merged or committed to the `dev` branch or any other code branch.
+> - **Dedicated `gh-pages` Deployment**: All documentation builds are compiled and deployed directly to the dedicated `gh-pages` branch using `mkdocs gh-deploy`.
+> - **Do not open PRs to `dev` for documentation-only changes**: Deploy docs directly to `gh-pages` so the live GitHub Pages site is updated immediately.
 
 ---
 
@@ -47,22 +58,26 @@ WhiskDB documentation adopts the scannable, developer-first writing standards of
 
 ## Workflow
 
-1. Change the documentation pages affected by the feature or task.
-2. Ensure no broken links or orphaned paths.
-3. Test documentation building:
+1. Edit the documentation pages under `docs/` or update `mkdocs.yml`.
+2. Verify documentation builds cleanly without warnings:
    ```sh
-   ~/.local/bin/mkdocs build --strict    # Verifies zero broken links and clean compilation
-   ~/.local/bin/mkdocs serve             # Live preview at http://127.0.0.1:8000
+   mkdocs build --strict    # Verifies zero broken links and clean compilation
+   mkdocs serve             # Optional: live local preview at http://127.0.0.1:8000
    ```
-4. `site/` is gitignored build output — never edit or commit it.
-5. Commit with conventional commit format: `docs: ...` or `docs(scope): ...`.
+3. Deploy directly to the dedicated `gh-pages` branch:
+   ```sh
+   mkdocs gh-deploy         # Builds and pushes directly to origin/gh-pages
+   ```
+4. Never push or PR documentation-only files to `dev` or `master`.
+5. Verify live site: https://Rashid2G.github.io/whiskdb/
 
 ---
 
-## Documentation PR Checklist
+## Documentation PR & Release Checklist
 
 - [ ] Clear page structure with lead summaries and scannable reference tables.
 - [ ] Active voice and concise imperative instructions throughout.
 - [ ] C++ SDK and CLI examples are tested, accurate, and follow C++23 standards.
 - [ ] External libraries and architecture references match the current codebase.
 - [ ] Internal Markdown links point to valid targets (`mkdocs build --strict` exits 0).
+- [ ] Deployed directly to `gh-pages` via `mkdocs gh-deploy` (not merged into `dev`).
