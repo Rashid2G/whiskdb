@@ -39,13 +39,13 @@
                                 <a href=".." class="nav-link">Home</a>
                             </li>
                             <li class="nav-item">
-                                <a href="../development/" class="nav-link">Development</a>
+                                <a href="./" class="nav-link active" aria-current="page">User Guide</a>
                             </li>
                             <li class="nav-item">
                                 <a href="../developer-guide/" class="nav-link">Developer Guide</a>
                             </li>
                             <li class="nav-item">
-                                <a href="./" class="nav-link active" aria-current="page">User Guide</a>
+                                <a href="../development/" class="nav-link">Development Status</a>
                             </li>
                         </ul>
 
@@ -56,12 +56,12 @@
                             </a>
                         </li>
                             <li class="nav-item">
-                                <a rel="prev" href="../developer-guide/" class="nav-link">
+                                <a rel="prev" href=".." class="nav-link">
                                     <i class="fa fa-arrow-left"></i> Previous
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a rel="next" class="nav-link disabled">
+                                <a rel="next" href="../developer-guide/" class="nav-link">
                                     Next <i class="fa fa-arrow-right"></i>
                                 </a>
                             </li>
@@ -117,8 +117,20 @@
     <div id="toc-collapse" class="navbar-collapse collapse card bg-body-tertiary">
         <ul class="nav flex-column">
             
-            <li class="nav-item" data-bs-level="1"><a href="#user-guide" class="nav-link">User Guide</a>
+            <li class="nav-item" data-bs-level="1"><a href="#whiskdb-user-guide" class="nav-link">WhiskDB User Guide</a>
               <ul class="nav flex-column">
+            <li class="nav-item" data-bs-level="2"><a href="#1-whiskdb-server-whiskdb" class="nav-link">1. WhiskDB Server (whiskdb)</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#2-whisk-cli-reference-whisk" class="nav-link">2. Whisk CLI Reference (whisk)</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#3-c-client-sdk-whiskclient" class="nav-link">3. C++ Client SDK (WhiskClient)</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
               </ul>
             </li>
         </ul>
@@ -126,18 +138,508 @@
 </div></div>
                     <div class="col-md-9" role="main">
 
-<h1 id="user-guide">User Guide</h1>
+<h1 id="whiskdb-user-guide">WhiskDB User Guide<a class="headerlink" href="#whiskdb-user-guide" title="Permanent link">#</a></h1>
+<p>This guide covers running the WhiskDB server daemon, using the interactive <code>whisk</code> command-line interface (CLI), and integrating WhiskDB into applications using the native C++ Client SDK.</p>
+<hr />
+<h2 id="1-whiskdb-server-whiskdb">1. WhiskDB Server (<code>whiskdb</code>)<a class="headerlink" href="#1-whiskdb-server-whiskdb" title="Permanent link">#</a></h2>
+<p>The <code>whiskdb</code> binary starts the persistent database server daemon. It initializes the storage engine, opens or recovers the database from disk snapshots and WAL logs, and accepts client TCP connections.</p>
+<h3 id="command-line-usage">Command-Line Usage<a class="headerlink" href="#command-line-usage" title="Permanent link">#</a></h3>
+<div class="codehilite"><pre><span></span><code>whiskdb<span class="w"> </span><span class="o">[</span>--config<span class="w"> </span>&lt;path&gt;<span class="o">]</span><span class="w"> </span><span class="o">[</span>--data-dir<span class="w"> </span>&lt;dir&gt;<span class="o">]</span><span class="w"> </span><span class="o">[</span>--host<span class="w"> </span>&lt;ip&gt;<span class="o">]</span><span class="w"> </span><span class="o">[</span>--port<span class="w"> </span>&lt;n&gt;<span class="o">]</span><span class="w"> </span><span class="o">[</span>--durability<span class="w"> </span>&lt;mode&gt;<span class="o">]</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--config &lt;path&gt;</code></td>
+<td>string</td>
+<td><code>./config.toml</code></td>
+<td>Path to the TOML configuration file</td>
+</tr>
+<tr>
+<td><code>--data-dir &lt;dir&gt;</code></td>
+<td>string</td>
+<td><code>./data</code></td>
+<td>Directory where WAL files and snapshot checkpoints are stored</td>
+</tr>
+<tr>
+<td><code>--host &lt;ip&gt;</code></td>
+<td>string</td>
+<td><code>0.0.0.0</code></td>
+<td>Network interface to bind for incoming client TCP connections</td>
+</tr>
+<tr>
+<td><code>--port &lt;n&gt;</code></td>
+<td>integer</td>
+<td><code>8080</code></td>
+<td>TCP port number to listen on (<code>1</code>–<code>65535</code>)</td>
+</tr>
+<tr>
+<td><code>--durability &lt;mode&gt;</code></td>
+<td>string</td>
+<td><code>group_commit</code></td>
+<td>Durability mode: <code>strict</code>, <code>group_commit</code>, <code>relaxed</code>, or <code>memory_only</code></td>
+</tr>
+<tr>
+<td><code>-h</code>, <code>--help</code></td>
+<td>flag</td>
+<td>—</td>
+<td>Display usage instructions and exit</td>
+</tr>
+</tbody>
+</table>
+<p>Command-line flags override the corresponding values in <code>config.toml</code>.</p>
+<h3 id="configuration-file-configtoml">Configuration File (<code>config.toml</code>)<a class="headerlink" href="#configuration-file-configtoml" title="Permanent link">#</a></h3>
+<p>WhiskDB reads server settings from a TOML configuration file on startup:</p>
+<div class="codehilite"><pre><span></span><code><span class="k">[config]</span>
+<span class="n">data_directory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"./data"</span>
+<span class="n">page_size</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">4096</span>
+<span class="n">ipv4</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"0.0.0.0"</span>
+<span class="n">port</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">8080</span>
+
+<span class="c1"># Durability profile: strict | group_commit | relaxed | memory_only</span>
+<span class="n">durability_mode</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"group_commit"</span>
+
+<span class="c1"># Automatic snapshot threshold: snapshot + reset WAL after N records (0 = disable)</span>
+<span class="n">checkpoint_wal_records</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">100000</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>data_directory</code></td>
+<td>string</td>
+<td><code>./data</code></td>
+<td>Target directory for persistence artifacts (<code>db.wal</code>, <code>snapshot.db</code>)</td>
+</tr>
+<tr>
+<td><code>page_size</code></td>
+<td>integer</td>
+<td><code>4096</code></td>
+<td>Allocation block size in bytes</td>
+</tr>
+<tr>
+<td><code>ipv4</code> / <code>host</code></td>
+<td>string</td>
+<td><code>0.0.0.0</code></td>
+<td>Listening IPv4 interface</td>
+</tr>
+<tr>
+<td><code>port</code></td>
+<td>integer</td>
+<td><code>8080</code></td>
+<td>Listening TCP port</td>
+</tr>
+<tr>
+<td><code>durability_mode</code></td>
+<td>string</td>
+<td><code>group_commit</code></td>
+<td>Durability mode balancing latency and crash safety</td>
+</tr>
+<tr>
+<td><code>checkpoint_wal_records</code></td>
+<td>integer</td>
+<td><code>100000</code></td>
+<td>Number of WAL mutations before triggering an automatic checkpoint</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="2-whisk-cli-reference-whisk">2. Whisk CLI Reference (<code>whisk</code>)<a class="headerlink" href="#2-whisk-cli-reference-whisk" title="Permanent link">#</a></h2>
+<p>The <code>whisk</code> CLI provides an interactive database shell (REPL), health inspection, log streaming, and command-driven SQL execution over the persistent TCP protocol.</p>
+<h3 id="synopsis">Synopsis<a class="headerlink" href="#synopsis" title="Permanent link">#</a></h3>
+<div class="codehilite"><pre><span></span><code>whisk<span class="w"> </span><span class="o">[</span>--host<span class="w"> </span>&lt;ip&gt;<span class="o">]</span><span class="w"> </span><span class="o">[</span>--port<span class="w"> </span>&lt;n&gt;<span class="o">]</span><span class="w"> </span>&lt;command&gt;<span class="w"> </span><span class="o">[</span>args<span class="o">]</span>
+</code></pre></div>
+
+<h3 id="global-options">Global Options<a class="headerlink" href="#global-options" title="Permanent link">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--host &lt;ip&gt;</code>, <code>--host=&lt;ip&gt;</code></td>
+<td><code>127.0.0.1</code></td>
+<td>WhiskDB server hostname or IP address</td>
+</tr>
+<tr>
+<td><code>--port &lt;n&gt;</code>, <code>--port=&lt;n&gt;</code></td>
+<td><code>8080</code></td>
+<td>WhiskDB server TCP port</td>
+</tr>
+<tr>
+<td><code>-h</code>, <code>--help</code></td>
+<td>—</td>
+<td>Display CLI usage information and exit</td>
+</tr>
+</tbody>
+</table>
+<h3 id="commands">Commands<a class="headerlink" href="#commands" title="Permanent link">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Arguments</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>repl</code></td>
+<td><em>(none)</em></td>
+<td>Start the interactive SQL shell with multi-line input and dot commands (default)</td>
+</tr>
+<tr>
+<td><code>ping</code></td>
+<td><em>(none)</em></td>
+<td>Ping the server and display measured round-trip latency in microseconds</td>
+</tr>
+<tr>
+<td><code>sql</code></td>
+<td><code>"&lt;query&gt;"</code></td>
+<td>Execute one or more SQL statements and render formatted result tables</td>
+</tr>
+<tr>
+<td><code>logs</code></td>
+<td><em>(none)</em></td>
+<td>Retrieve and display recent structured server-side engine logs</td>
+</tr>
+<tr>
+<td><code>snapshot</code></td>
+<td><em>(none)</em></td>
+<td>Trigger an immediate manual database checkpoint and WAL reset</td>
+</tr>
+</tbody>
+</table>
+<h3 id="interactive-repl-whisk-repl">Interactive REPL (<code>whisk repl</code>)<a class="headerlink" href="#interactive-repl-whisk-repl" title="Permanent link">#</a></h3>
+<p>Launching <code>whisk</code> without arguments (or with <code>whisk repl</code>) enters the interactive REPL:</p>
+<div class="codehilite"><pre><span></span><code>./build/debug/app/whisk
+</code></pre></div>
+
+<h4 id="repl-prompt-multi-line-editing">REPL Prompt &amp; Multi-Line Editing<a class="headerlink" href="#repl-prompt-multi-line-editing" title="Permanent link">#</a></h4>
+<ul>
+<li>Single statements ending in a semicolon <code>;</code> execute immediately.</li>
+<li>Unfinished statements show a continuation prompt (<code>...&gt;</code>):</li>
+</ul>
+<div class="codehilite"><pre><span></span><code><span class="n">whisk</span><span class="o">&gt;</span><span class="w"> </span><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">inventory</span><span class="w"> </span><span class="p">(</span>
+<span class="w">   </span><span class="p">...</span><span class="o">&gt;</span><span class="w">   </span><span class="n">item_id</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="p">,</span>
+<span class="w">   </span><span class="p">...</span><span class="o">&gt;</span><span class="w">   </span><span class="n">name</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">   </span><span class="p">...</span><span class="o">&gt;</span><span class="w">   </span><span class="n">stock</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="mi">0</span>
+<span class="w">   </span><span class="p">...</span><span class="o">&gt;</span><span class="w"> </span><span class="p">);</span>
+<span class="n">Query</span><span class="w"> </span><span class="n">OK</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="k">rows</span><span class="w"> </span><span class="n">affected</span><span class="w"> </span><span class="p">(</span><span class="n">round</span><span class="w"> </span><span class="n">trip</span><span class="w"> </span><span class="mi">0</span><span class="p">.</span><span class="mi">39</span><span class="w"> </span><span class="n">ms</span><span class="p">)</span>
+</code></pre></div>
+
+<h4 id="dot-commands">Dot Commands<a class="headerlink" href="#dot-commands" title="Permanent link">#</a></h4>
+<p>Inside the REPL, commands starting with a dot <code>.</code> control shell session operations:</p>
+<table>
+<thead>
+<tr>
+<th>Dot Command</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>.help</code></td>
+<td>Display the list of available REPL commands</td>
+</tr>
+<tr>
+<td><code>.ping</code></td>
+<td>Send a ping request and display round-trip latency</td>
+</tr>
+<tr>
+<td><code>.logs</code></td>
+<td>Print the recent server execution log buffer</td>
+</tr>
+<tr>
+<td><code>.snapshot</code></td>
+<td>Trigger a manual server checkpoint</td>
+</tr>
+<tr>
+<td><code>.quit</code>, <code>.exit</code></td>
+<td>Disconnect and terminate the REPL session</td>
+</tr>
+</tbody>
+</table>
+<h4 id="table-formatting">Table Formatting<a class="headerlink" href="#table-formatting" title="Permanent link">#</a></h4>
+<p><code>SELECT</code> queries are automatically rendered into aligned ASCII tables:</p>
+<div class="codehilite"><pre><span></span><code><span class="n">whisk</span><span class="o">&gt;</span><span class="w"> </span><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">inventory</span><span class="w"> </span><span class="p">(</span><span class="n">name</span><span class="p">,</span><span class="w"> </span><span class="n">stock</span><span class="p">)</span><span class="w"> </span><span class="k">VALUES</span><span class="w"> </span><span class="p">(</span><span class="s1">'Espresso Beans'</span><span class="p">,</span><span class="w"> </span><span class="mi">250</span><span class="p">),</span><span class="w"> </span><span class="p">(</span><span class="s1">'Oat Milk'</span><span class="p">,</span><span class="w"> </span><span class="mi">40</span><span class="p">);</span>
+<span class="n">Query</span><span class="w"> </span><span class="n">OK</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="k">rows</span><span class="w"> </span><span class="n">affected</span><span class="p">,</span><span class="w"> </span><span class="n">last_insert_rowid</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="p">(</span><span class="n">round</span><span class="w"> </span><span class="n">trip</span><span class="w"> </span><span class="mi">0</span><span class="p">.</span><span class="mi">41</span><span class="w"> </span><span class="n">ms</span><span class="p">)</span>
+
+<span class="n">whisk</span><span class="o">&gt;</span><span class="w"> </span><span class="k">SELECT</span><span class="w"> </span><span class="n">item_id</span><span class="p">,</span><span class="w"> </span><span class="n">name</span><span class="p">,</span><span class="w"> </span><span class="n">stock</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">inventory</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">stock</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">50</span><span class="p">;</span>
+<span class="o">+</span><span class="c1">---------+----------+-------+</span>
+<span class="o">|</span><span class="w"> </span><span class="n">item_id</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">name</span><span class="w">     </span><span class="o">|</span><span class="w"> </span><span class="n">stock</span><span class="w"> </span><span class="o">|</span>
+<span class="o">+</span><span class="c1">---------+----------+-------+</span>
+<span class="o">|</span><span class="w">       </span><span class="mi">2</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">Oat</span><span class="w"> </span><span class="n">Milk</span><span class="w"> </span><span class="o">|</span><span class="w">    </span><span class="mi">40</span><span class="w"> </span><span class="o">|</span>
+<span class="o">+</span><span class="c1">---------+----------+-------+</span>
+<span class="mi">1</span><span class="w"> </span><span class="k">row</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="k">set</span><span class="w"> </span><span class="p">(</span><span class="mi">0</span><span class="p">.</span><span class="mi">32</span><span class="w"> </span><span class="n">ms</span><span class="p">)</span>
+</code></pre></div>
+
+<h3 id="non-interactive-cli-commands">Non-Interactive CLI Commands<a class="headerlink" href="#non-interactive-cli-commands" title="Permanent link">#</a></h3>
+<h4 id="query-execution-sql">Query Execution (<code>sql</code>)<a class="headerlink" href="#query-execution-sql" title="Permanent link">#</a></h4>
+<p>Run SQL queries directly from automation scripts or shell pipelines:</p>
+<div class="codehilite"><pre><span></span><code>./build/debug/app/whisk<span class="w"> </span>sql<span class="w"> </span><span class="s2">"SELECT COUNT(*) AS total_items FROM inventory;"</span>
+</code></pre></div>
+
+<p>Output:</p>
+<div class="codehilite"><pre><span></span><code>+-------------+
+| total_items |
++-------------+
+|           2 |
++-------------+
+1 row in set (0.28 ms)
+</code></pre></div>
+
+<h4 id="server-health-latency-ping">Server Health &amp; Latency (<code>ping</code>)<a class="headerlink" href="#server-health-latency-ping" title="Permanent link">#</a></h4>
+<p>Check server availability and network round-trip time:</p>
+<div class="codehilite"><pre><span></span><code>./build/debug/app/whisk<span class="w"> </span>ping
+</code></pre></div>
+
+<p>Output:</p>
+<div class="codehilite"><pre><span></span><code>PONG in 184 us
+</code></pre></div>
+
+<h4 id="server-logs-inspection-logs">Server Logs Inspection (<code>logs</code>)<a class="headerlink" href="#server-logs-inspection-logs" title="Permanent link">#</a></h4>
+<p>Stream diagnostic server logs:</p>
+<div class="codehilite"><pre><span></span><code>./build/debug/app/whisk<span class="w"> </span>logs
+</code></pre></div>
+
+<h4 id="manual-checkpoint-snapshot">Manual Checkpoint (<code>snapshot</code>)<a class="headerlink" href="#manual-checkpoint-snapshot" title="Permanent link">#</a></h4>
+<p>Force an atomic snapshot and WAL truncation:</p>
+<div class="codehilite"><pre><span></span><code>./build/debug/app/whisk<span class="w"> </span>snapshot
+</code></pre></div>
+
 <div class="admonition info">
-<p class="admonition-title">Documentation Pending MVP Release</p>
-<p>WhiskDB is currently under active pre-MVP development as part of the YZL 400 Senior Graduation Project.</p>
-<p>The user-facing documentation will be published here upon completion of our first MVP milestone.</p>
+<p class="admonition-title">Planned Whisk Module Commands</p>
+<p>Commands for managing server-side WebAssembly modules (<code>whisk init</code>, <code>whisk build</code>, <code>whisk test</code>, <code>whisk publish</code>, and <code>whisk call</code>) are part of the upcoming WASM engine release. See <a href="../development/">Development Status</a> for milestone tracking.</p>
 </div>
 <hr />
-<p>For information on project milestones and engineering standards, please visit:</p>
+<h2 id="3-c-client-sdk-whiskclient">3. C++ Client SDK (<code>WhiskClient</code>)<a class="headerlink" href="#3-c-client-sdk-whiskclient" title="Permanent link">#</a></h2>
+<p>The C++ Client SDK provides a type-safe, zero-copy client interface for integrating WhiskDB directly into C++23 applications.</p>
+<h3 id="including-the-header">Including the Header<a class="headerlink" href="#including-the-header" title="Permanent link">#</a></h3>
+<p>Add <code>include/</code> to your compiler search path and include the SDK header:</p>
+<div class="codehilite"><pre><span></span><code><span class="cp">#include</span><span class="w"> </span><span class="cpf">"client/whisk_client.hpp"</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">"client/table_format.hpp"</span>
+</code></pre></div>
+
+<p>Link your executable against <code>whiskdb_core</code>.</p>
+<h3 id="api-reference-whiskclient">API Reference: <code>WhiskClient</code><a class="headerlink" href="#api-reference-whiskclient" title="Permanent link">#</a></h3>
+<div class="codehilite"><pre><span></span><code><span class="k">namespace</span><span class="w"> </span><span class="nn">database</span><span class="w"> </span><span class="p">{</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">WhiskClient</span><span class="w"> </span><span class="p">{</span>
+<span class="k">public</span><span class="o">:</span>
+<span class="w">    </span><span class="n">WhiskClient</span><span class="p">();</span>
+<span class="w">    </span><span class="o">~</span><span class="n">WhiskClient</span><span class="p">();</span>
+
+<span class="w">    </span><span class="c1">// Prevent copying and moving (manages an active TCP connection)</span>
+<span class="w">    </span><span class="n">WhiskClient</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">WhiskClient</span><span class="o">&amp;</span><span class="p">)</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">delete</span><span class="p">;</span>
+<span class="w">    </span><span class="n">WhiskClient</span><span class="o">&amp;</span><span class="w"> </span><span class="k">operator</span><span class="o">=</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">WhiskClient</span><span class="o">&amp;</span><span class="p">)</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">delete</span><span class="p">;</span>
+
+<span class="w">    </span><span class="c1">// Connection lifecycle</span>
+<span class="w">    </span><span class="n">Result</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Connect</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="o">&amp;</span><span class="w"> </span><span class="n">host</span><span class="p">,</span><span class="w"> </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">port</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">Close</span><span class="p">();</span>
+<span class="w">    </span><span class="kt">bool</span><span class="w"> </span><span class="nf">IsConnected</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="p">;</span>
+
+<span class="w">    </span><span class="c1">// Server operations</span>
+<span class="w">    </span><span class="n">Result</span><span class="o">&lt;</span><span class="kt">uint64_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Ping</span><span class="p">();</span>
+<span class="w">    </span><span class="n">Result</span><span class="o">&lt;</span><span class="n">QueryResult</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Query</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="n">sql</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">Value</span><span class="o">&gt;</span><span class="w"> </span><span class="n">params</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{});</span>
+<span class="w">    </span><span class="n">Result</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Snapshot</span><span class="p">();</span>
+<span class="w">    </span><span class="n">Result</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="o">&gt;</span><span class="w"> </span><span class="n">GetLogs</span><span class="p">();</span>
+<span class="p">};</span>
+
+<span class="p">}</span><span class="w"> </span><span class="c1">// namespace database</span>
+</code></pre></div>
+
+<h4 id="method-details">Method Details<a class="headerlink" href="#method-details" title="Permanent link">#</a></h4>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Parameters</th>
+<th>Return Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Connect()</code></td>
+<td><code>const std::string&amp; host</code>, <code>uint16_t port</code></td>
+<td><code>Result&lt;void&gt;</code></td>
+<td>Establishes a persistent TCP connection to the WhiskDB server</td>
+</tr>
+<tr>
+<td><code>Close()</code></td>
+<td><em>(none)</em></td>
+<td><code>void</code></td>
+<td>Closes the underlying socket connection</td>
+</tr>
+<tr>
+<td><code>IsConnected()</code></td>
+<td><em>(none)</em></td>
+<td><code>bool</code></td>
+<td>Returns <code>true</code> if the socket is currently connected</td>
+</tr>
+<tr>
+<td><code>Ping()</code></td>
+<td><em>(none)</em></td>
+<td><code>Result&lt;uint64_t&gt;</code></td>
+<td>Sends <code>Opcode::Ping</code> and returns round-trip duration in microseconds</td>
+</tr>
+<tr>
+<td><code>Query()</code></td>
+<td><code>std::string_view sql</code>, <code>std::span&lt;const Value&gt; params</code></td>
+<td><code>Result&lt;QueryResult&gt;</code></td>
+<td>Executes SQL statement(s), returning column headers and typed rows</td>
+</tr>
+<tr>
+<td><code>Snapshot()</code></td>
+<td><em>(none)</em></td>
+<td><code>Result&lt;std::string&gt;</code></td>
+<td>Requests the server to flush an atomic snapshot checkpoint</td>
+</tr>
+<tr>
+<td><code>GetLogs()</code></td>
+<td><em>(none)</em></td>
+<td><code>Result&lt;std::string&gt;</code></td>
+<td>Retrieves the engine execution logs from the server</td>
+</tr>
+</tbody>
+</table>
+<h3 id="data-model-results">Data Model &amp; Results<a class="headerlink" href="#data-model-results" title="Permanent link">#</a></h3>
+<h4 id="sql-values-value">SQL Values (<code>Value</code>)<a class="headerlink" href="#sql-values-value" title="Permanent link">#</a></h4>
+<p>WhiskDB represents dynamically typed SQL values via <code>std::variant</code>:</p>
+<div class="codehilite"><pre><span></span><code><span class="k">namespace</span><span class="w"> </span><span class="nn">database</span><span class="w"> </span><span class="p">{</span>
+
+<span class="k">using</span><span class="w"> </span><span class="n">Blob</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="kt">uint8_t</span><span class="o">&gt;</span><span class="p">;</span>
+
+<span class="c1">// 0: Null, 1: int64_t, 2: double, 3: std::string, 4: Blob</span>
+<span class="k">using</span><span class="w"> </span><span class="n">Value</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">variant</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="n">monostate</span><span class="p">,</span><span class="w"> </span><span class="kt">int64_t</span><span class="p">,</span><span class="w"> </span><span class="kt">double</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="p">,</span><span class="w"> </span><span class="n">Blob</span><span class="o">&gt;</span><span class="p">;</span>
+
+<span class="k">enum</span><span class="w"> </span><span class="k">class</span><span class="w"> </span><span class="nc">ValueType</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">Null</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">    </span><span class="n">Int64</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">    </span><span class="n">Double</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span>
+<span class="w">    </span><span class="n">Text</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span>
+<span class="w">    </span><span class="n">Blob</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">4</span>
+<span class="p">};</span>
+
+<span class="p">}</span><span class="w"> </span><span class="c1">// namespace database</span>
+</code></pre></div>
+
+<h4 id="query-results-queryresult">Query Results (<code>QueryResult</code>)<a class="headerlink" href="#query-results-queryresult" title="Permanent link">#</a></h4>
+<div class="codehilite"><pre><span></span><code><span class="k">namespace</span><span class="w"> </span><span class="nn">database</span><span class="w"> </span><span class="p">{</span>
+
+<span class="k">struct</span><span class="w"> </span><span class="nc">QueryResult</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="o">&gt;</span><span class="w"> </span><span class="n">columns</span><span class="p">;</span><span class="w">       </span><span class="c1">// Column names (empty for non-SELECT DML)</span>
+<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="n">Value</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="n">rows</span><span class="p">;</span><span class="w">   </span><span class="c1">// Row-major cell matrix</span>
+<span class="w">    </span><span class="n">idx_t</span><span class="w"> </span><span class="n">rows_affected</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w">                </span><span class="c1">// Number of rows modified (for INSERT/UPDATE/DELETE)</span>
+<span class="w">    </span><span class="kt">int64_t</span><span class="w"> </span><span class="n">last_insert_rowid</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w">          </span><span class="c1">// Auto-generated primary key from last insert</span>
+<span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">exec_us</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w">                   </span><span class="c1">// Server-side execution time in microseconds</span>
+<span class="w">    </span><span class="kt">bool</span><span class="w"> </span><span class="n">is_mutation</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">false</span><span class="p">;</span><span class="w">               </span><span class="c1">// True if statement modified database state</span>
+<span class="p">};</span>
+
+<span class="p">}</span><span class="w"> </span><span class="c1">// namespace database</span>
+</code></pre></div>
+
+<h4 id="result-formatting-utilities">Result Formatting Utilities<a class="headerlink" href="#result-formatting-utilities" title="Permanent link">#</a></h4>
 <ul>
-<li><a href="../development/">Project Development Overview</a></li>
-<li><a href="../developer-guide/">Developer Guide</a></li>
-</ul></div>
+<li><code>std::string FormatResultTable(const QueryResult&amp; qr)</code>: Renders an ASCII box-drawing table with column alignment, row counts, and execution metrics.</li>
+<li><code>std::vector&lt;std::string&gt; SplitStatements(std::string&amp; buffer)</code>: Splits multi-line SQL input into complete, semicolon-terminated statements while respecting quotes and escapes.</li>
+</ul>
+<h3 id="complete-c23-integration-example">Complete C++23 Integration Example<a class="headerlink" href="#complete-c23-integration-example" title="Permanent link">#</a></h3>
+<div class="codehilite"><pre><span></span><code><span class="cp">#include</span><span class="w"> </span><span class="cpf">"client/whisk_client.hpp"</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">"client/table_format.hpp"</span>
+
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;iostream&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;print&gt;</span>
+
+<span class="kt">int</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">database</span><span class="p">;</span>
+
+<span class="w">    </span><span class="n">WhiskClient</span><span class="w"> </span><span class="n">client</span><span class="p">;</span>
+
+<span class="w">    </span><span class="c1">// 1. Connect to WhiskDB</span>
+<span class="w">    </span><span class="k">auto</span><span class="w"> </span><span class="n">conn_res</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">Connect</span><span class="p">(</span><span class="s">"127.0.0.1"</span><span class="p">,</span><span class="w"> </span><span class="mi">8080</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">conn_res</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">std</span><span class="o">::</span><span class="n">println</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">"Connection failed: {}"</span><span class="p">,</span><span class="w"> </span><span class="n">conn_res</span><span class="p">.</span><span class="n">error</span><span class="p">().</span><span class="n">Message</span><span class="p">());</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">println</span><span class="p">(</span><span class="s">"Connected to WhiskDB server."</span><span class="p">);</span>
+
+<span class="w">    </span><span class="c1">// 2. Measure latency with Ping</span>
+<span class="w">    </span><span class="k">auto</span><span class="w"> </span><span class="n">ping_res</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">Ping</span><span class="p">();</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ping_res</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">std</span><span class="o">::</span><span class="n">println</span><span class="p">(</span><span class="s">"Ping latency: {} us"</span><span class="p">,</span><span class="w"> </span><span class="o">*</span><span class="n">ping_res</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// 3. Execute DDL schema creation</span>
+<span class="w">    </span><span class="k">auto</span><span class="w"> </span><span class="n">ddl_res</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">Query</span><span class="p">(</span><span class="s">"CREATE TABLE IF NOT EXISTS accounts ("</span>
+<span class="w">                                </span><span class="s">"  id INTEGER PRIMARY KEY, "</span>
+<span class="w">                                </span><span class="s">"  owner TEXT NOT NULL, "</span>
+<span class="w">                                </span><span class="s">"  balance REAL NOT NULL"</span>
+<span class="w">                                </span><span class="s">");"</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">ddl_res</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">std</span><span class="o">::</span><span class="n">println</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">"DDL error: {}"</span><span class="p">,</span><span class="w"> </span><span class="n">ddl_res</span><span class="p">.</span><span class="n">error</span><span class="p">().</span><span class="n">Message</span><span class="p">());</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// 4. Insert data</span>
+<span class="w">    </span><span class="k">auto</span><span class="w"> </span><span class="n">insert_res</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">Query</span><span class="p">(</span><span class="s">"INSERT INTO accounts (owner, balance) VALUES ('Alice', 1250.75), ('Bob', 300.00);"</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">insert_res</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">std</span><span class="o">::</span><span class="n">println</span><span class="p">(</span><span class="s">"Inserted rows: {}, last rowid: {}"</span><span class="p">,</span><span class="w"> </span>
+<span class="w">                     </span><span class="n">insert_res</span><span class="o">-&gt;</span><span class="n">rows_affected</span><span class="p">,</span><span class="w"> </span><span class="n">insert_res</span><span class="o">-&gt;</span><span class="n">last_insert_rowid</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// 5. Query data and inspect typed rows</span>
+<span class="w">    </span><span class="k">auto</span><span class="w"> </span><span class="n">query_res</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">Query</span><span class="p">(</span><span class="s">"SELECT id, owner, balance FROM accounts ORDER BY id ASC;"</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">query_res</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">std</span><span class="o">::</span><span class="n">println</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">"Query error: {}"</span><span class="p">,</span><span class="w"> </span><span class="n">query_res</span><span class="p">.</span><span class="n">error</span><span class="p">().</span><span class="n">Message</span><span class="p">());</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// Print formatted table using SDK utility</span>
+<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">print</span><span class="p">(</span><span class="s">"{}"</span><span class="p">,</span><span class="w"> </span><span class="n">FormatResultTable</span><span class="p">(</span><span class="o">*</span><span class="n">query_res</span><span class="p">));</span>
+
+<span class="w">    </span><span class="c1">// Access individual cells programmatically</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">idx_t</span><span class="w"> </span><span class="n">row_idx</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">row_idx</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">query_res</span><span class="o">-&gt;</span><span class="n">rows</span><span class="p">.</span><span class="n">size</span><span class="p">();</span><span class="w"> </span><span class="o">++</span><span class="n">row_idx</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="o">&amp;</span><span class="w"> </span><span class="n">row</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">query_res</span><span class="o">-&gt;</span><span class="n">rows</span><span class="p">[</span><span class="n">row_idx</span><span class="p">];</span>
+<span class="w">        </span><span class="kt">int64_t</span><span class="w"> </span><span class="n">id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">get</span><span class="o">&lt;</span><span class="kt">int64_t</span><span class="o">&gt;</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="mi">0</span><span class="p">]);</span>
+<span class="w">        </span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="o">&amp;</span><span class="w"> </span><span class="n">owner</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">get</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="o">&gt;</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="mi">1</span><span class="p">]);</span>
+<span class="w">        </span><span class="kt">double</span><span class="w"> </span><span class="n">balance</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">get</span><span class="o">&lt;</span><span class="kt">double</span><span class="o">&gt;</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="mi">2</span><span class="p">]);</span>
+
+<span class="w">        </span><span class="n">std</span><span class="o">::</span><span class="n">println</span><span class="p">(</span><span class="s">"Account #{}: {} (Balance: ${:.2f})"</span><span class="p">,</span><span class="w"> </span><span class="n">id</span><span class="p">,</span><span class="w"> </span><span class="n">owner</span><span class="p">,</span><span class="w"> </span><span class="n">balance</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// 6. Graceful disconnect</span>
+<span class="w">    </span><span class="n">client</span><span class="p">.</span><span class="n">Close</span><span class="p">();</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h3 id="error-handling-policy">Error Handling Policy<a class="headerlink" href="#error-handling-policy" title="Permanent link">#</a></h3>
+<p>The SDK uses the monadic <code>Result&lt;T&gt;</code> template rather than throwing C++ exceptions:
+- <strong>Success</strong>: Check <code>if (result)</code> or evaluate <code>result.has_value()</code>. Retrieve the value via <code>*result</code> or <code>result.value()</code>.
+- <strong>Failure</strong>: Extract the error details via <code>result.error().Code()</code> and <code>result.error().Message()</code>.</p>
+<p>Operational errors (network disconnections, SQL syntax errors, constraint violations) are always returned through <code>Result&lt;T&gt;</code>. Exceptions are reserved for unrecoverable host failures.</p></div>
             </div>
         </div>
 
