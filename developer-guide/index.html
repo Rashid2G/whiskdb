@@ -39,13 +39,13 @@
                                 <a href=".." class="nav-link">Home</a>
                             </li>
                             <li class="nav-item">
-                                <a href="../development/" class="nav-link">Development</a>
+                                <a href="../user-guide/" class="nav-link">User Guide</a>
                             </li>
                             <li class="nav-item">
                                 <a href="./" class="nav-link active" aria-current="page">Developer Guide</a>
                             </li>
                             <li class="nav-item">
-                                <a href="../user-guide/" class="nav-link">User Guide</a>
+                                <a href="../development/" class="nav-link">Development Status</a>
                             </li>
                         </ul>
 
@@ -56,12 +56,12 @@
                             </a>
                         </li>
                             <li class="nav-item">
-                                <a rel="prev" href="../development/" class="nav-link">
+                                <a rel="prev" href="../user-guide/" class="nav-link">
                                     <i class="fa fa-arrow-left"></i> Previous
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a rel="next" href="../user-guide/" class="nav-link">
+                                <a rel="next" href="../development/" class="nav-link">
                                     Next <i class="fa fa-arrow-right"></i>
                                 </a>
                             </li>
@@ -117,17 +117,29 @@
     <div id="toc-collapse" class="navbar-collapse collapse card bg-body-tertiary">
         <ul class="nav flex-column">
             
-            <li class="nav-item" data-bs-level="1"><a href="#developer-guide" class="nav-link">Developer Guide</a>
+            <li class="nav-item" data-bs-level="1"><a href="#whiskdb-developer-guide" class="nav-link">WhiskDB Developer Guide</a>
               <ul class="nav flex-column">
-            <li class="nav-item" data-bs-level="2"><a href="#external-libraries" class="nav-link">External Libraries</a>
-              <ul class="nav flex-column">
-              </ul>
-            </li>
-            <li class="nav-item" data-bs-level="2"><a href="#coding-standards-conventions" class="nav-link">Coding Standards &amp; Conventions</a>
+            <li class="nav-item" data-bs-level="2"><a href="#1-external-libraries-ecosystem" class="nav-link">1. External Libraries &amp; Ecosystem</a>
               <ul class="nav flex-column">
               </ul>
             </li>
-            <li class="nav-item" data-bs-level="2"><a href="#git-collaboration-workflow" class="nav-link">Git &amp; Collaboration Workflow</a>
+            <li class="nav-item" data-bs-level="2"><a href="#2-coding-standards-conventions-c23" class="nav-link">2. Coding Standards &amp; Conventions (C++23)</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#3-error-handling-invariant-policy" class="nav-link">3. Error Handling &amp; Invariant Policy</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#4-internal-subsystem-architecture" class="nav-link">4. Internal Subsystem Architecture</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#5-build-test-macros" class="nav-link">5. Build &amp; Test Macros</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#6-git-collaboration-workflow" class="nav-link">6. Git &amp; Collaboration Workflow</a>
               <ul class="nav flex-column">
               </ul>
             </li>
@@ -138,195 +150,285 @@
 </div></div>
                     <div class="col-md-9" role="main">
 
-<h1 id="developer-guide">Developer Guide</h1>
-<p>Welcome to the WhiskDB Developer Guide. This document defines the engineering standards, architecture, and collaboration workflow for all team members contributing to the project.</p>
+<h1 id="whiskdb-developer-guide">WhiskDB Developer Guide<a class="headerlink" href="#whiskdb-developer-guide" title="Permanent link">#</a></h1>
+<p>The WhiskDB Developer Guide specifies the normative engineering standards, internal subsystem architecture, coding conventions, and collaboration workflow for all team members and automated agents contributing to WhiskDB.</p>
 <hr />
-<h2 id="external-libraries">External Libraries</h2>
-<p>WhiskDB leverages external C++ libraries for low-level networking, protocols, and performance-critical operations:</p>
+<h2 id="1-external-libraries-ecosystem">1. External Libraries &amp; Ecosystem<a class="headerlink" href="#1-external-libraries-ecosystem" title="Permanent link">#</a></h2>
+<p>WhiskDB relies on focused, lightweight dependencies managed via <strong>vcpkg</strong> or CMake's <strong>FetchContent</strong>:</p>
 <table>
 <thead>
 <tr>
 <th>Library</th>
-<th>Component / Header</th>
+<th>Header / Component</th>
 <th>Purpose</th>
-<th>Description</th>
+<th>Integration Method</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong><a href="https://www.boost.org/doc/libs/release/libs/beast/">Boost.Beast</a></strong></td>
-<td><code>boost/beast</code> (<code>#include &lt;boost/beast.hpp&gt;</code>)</td>
-<td>Networking &amp; WebSocket</td>
-<td>Provides HTTP and WebSocket protocol implementations built on top of <strong>Boost.Asio</strong>. Powers WhiskDB's client connection handling, real-time reactive subscriptions, and network communication layer.</td>
+<td><strong><a href="https://think-async.com/Asio/">Standalone Asio</a></strong></td>
+<td><code>asio.hpp</code> (<code>asio_headers</code>)</td>
+<td>Asynchronous non-blocking network I/O, event loops, TCP server and client socket handling</td>
+<td>vcpkg / CMake FetchContent</td>
+</tr>
+<tr>
+<td><strong><a href="https://www.sqlite.org/">SQLite3 Amalgamation</a></strong></td>
+<td><code>sqlite3.h</code> (<code>sqlite3_static</code>)</td>
+<td>In-memory relational storage engine, SQL parsing, B-tree indexes, and ACID savepoint management</td>
+<td>Bundled C static library</td>
+</tr>
+<tr>
+<td><strong><a href="https://marzer.github.io/tomlplusplus/">toml++</a></strong></td>
+<td><code>toml++/toml.hpp</code> (<code>toml_headers</code>)</td>
+<td>Header-only C++20/23 TOML configuration file parser for <code>config.toml</code></td>
+<td>vcpkg / CMake FetchContent</td>
+</tr>
+<tr>
+<td><strong><a href="https://wasmtime.dev/">Wasmtime C API</a></strong></td>
+<td><code>wasm.h</code>, <code>wasmtime.h</code></td>
+<td>Sandboxed WebAssembly runtime for server-side Whisk module execution <em>(in progress)</em></td>
+<td>System / Vendor archive</td>
 </tr>
 </tbody>
 </table>
-<h3 id="boostbeast-details">Boost.Beast Details</h3>
-<ul>
-<li><strong>Header &amp; Namespace</strong>: <code>&lt;boost/beast.hpp&gt;</code>, <code>boost::beast</code> (with <code>boost::beast::websocket</code>)</li>
-<li><strong>Underlying I/O Engine</strong>: Built on top of <strong>Boost.Asio</strong> (<code>boost::asio</code>) for scalable, asynchronous, non-blocking network I/O.</li>
-<li><strong>Key Responsibilities</strong>:<ul>
-<li><strong>WebSocket Protocol Handling</strong>: Manages full RFC 6455 compliance, including handshake negotiation, framing, binary and text messages, and ping/pong keep-alives.</li>
-<li><strong>Real-Time Client Subscriptions</strong>: Powers the network communication layer that broadcasts data mutations and subscription updates to connected clients with low latency.</li>
-<li><strong>Zero-Copy Buffer Integration</strong>: Interoperates with memory buffers efficiently to match WhiskDB's in-engine execution model.</li>
-</ul>
-</li>
-<li><strong>Integration &amp; Build</strong>: Managed via <strong>vcpkg</strong> (<code>vcpkg.json</code>) and linked in <code>CMakeLists.txt</code> via CMake's <code>find_package(Boost REQUIRED)</code>.</li>
-</ul>
+<div class="admonition note">
+<p class="admonition-title">Zero Heavy Frameworks</p>
+<p>WhiskDB avoids heavy all-in-one frameworks. All network protocols use length-prefixed binary frames built on top of standalone Asio rather than HTTP or heavy WebSocket stacks.</p>
+</div>
 <hr />
-<h2 id="coding-standards-conventions">Coding Standards &amp; Conventions</h2>
-<p>To maintain a clean and reliable codebase across the team, all contributors should follow these conventions:</p>
-<h3 id="c-style">C++ Style</h3>
-<h4 id="memory-pointers">Memory &amp; Pointers</h4>
-<ul>
-<li><strong>Smart pointers only</strong>: Never use raw <code>malloc</code>, <code>new</code>, or <code>delete</code>. Use smart pointers for all dynamic allocations.</li>
-<li><strong>Prefer <code>std::unique_ptr</code></strong>: Default to <code>std::unique_ptr</code> for exclusive ownership. Use <code>std::shared_ptr</code> only when multiple owners truly need shared lifetime management.</li>
-</ul>
-<h4 id="types-constants">Types &amp; Constants</h4>
-<ul>
-<li><strong>Fixed-width integers</strong>: Use explicit fixed-width integers (<code>int8_t</code>, <code>int16_t</code>, <code>int32_t</code>, <code>int64_t</code>, <code>uint8_t</code>, <code>uint16_t</code>, <code>uint32_t</code>, <code>uint64_t</code>) instead of standard types like <code>int</code>, <code>long</code>, or <code>uint</code>.</li>
-<li><strong>Indices and offsets</strong>: Use <code>idx_t</code> instead of <code>size_t</code> for counts, offsets, and collection indices.</li>
-<li><strong>Scoped enums (<code>enum class</code>)</strong>: Always use <code>enum class</code> rather than plain C-style enums. Explicitly specify the underlying storage type (e.g., <code>: uint8_t</code>) only when the enum is serialized.</li>
-<li><strong>No magic numbers</strong>: Name literal values using <code>constexpr</code> variables to provide clear meaning and context.</li>
-</ul>
-<h4 id="const-references">Const &amp; References</h4>
-<ul>
-<li><strong>Use <code>const</code> whenever possible</strong>: Mark variables, member functions, and parameters <code>const</code> by default if they should not be modified.</li>
-<li><strong>Pass by reference</strong>: Favor references over raw pointers for function arguments.</li>
-<li><strong>Const references for non-trivial types</strong>: Pass objects that are expensive to copy (e.g., <code>std::vector</code>, <code>std::string</code>) as <code>const &amp;</code>.</li>
-</ul>
-<h4 id="functions-control-flow">Functions &amp; Control Flow</h4>
-<ul>
-<li><strong>Return early</strong>: Keep nesting shallow and avoid deep <code>if</code>/<code>else</code> branches by returning early.</li>
-<li><strong>Always use braces</strong>: Use curly braces <code>{}</code> for all <code>if</code> statements and loops, even for single-line bodies.</li>
-<li><strong>Range-based loops</strong>: Prefer modern range-based <code>for</code> loops whenever iterating:
-  <code>cpp
-  for (const auto&amp; item : items) {
-      // process item
-  }</code></li>
-<li><strong>Virtual overrides</strong>: When overriding a virtual method, omit the <code>virtual</code> keyword and explicitly use <code>override</code> or <code>final</code>.</li>
-</ul>
-<h4 id="namespaces">Namespaces</h4>
-<ul>
-<li><strong>No namespace imports</strong>: Never write <code>using namespace std;</code> or import entire namespaces into source or header files.</li>
-<li><strong>Core namespace</strong>: All functions and classes under the core engine (<code>src/</code>) must reside inside the <code>database</code> namespace.</li>
-</ul>
-<h4 id="class-layout">Class Layout</h4>
-<p>Keep class structures consistent and easy to scan:
-1. Public constructor(s) and public member variables.
-2. Public member functions.
-3. Private helper functions.
-4. Private member variables.</p>
-<pre><code class="language-cpp">class MyClass {
-public:
-    MyClass();
-
-    int my_public_variable;
-
-public:
-    void MyFunction();
-
-private:
-    void MyPrivateFunction();
-
-private:
-    int my_private_variable;
-};
-</code></pre>
-<hr />
-<h3 id="naming-conventions">Naming Conventions</h3>
-<p>Keep names clear and descriptive. Avoid single-letter variables except for standard loop counters in simple, non-nested loops.</p>
+<h2 id="2-coding-standards-conventions-c23">2. Coding Standards &amp; Conventions (C++23)<a class="headerlink" href="#2-coding-standards-conventions-c23" title="Permanent link">#</a></h2>
+<h3 id="namespace-rule">Namespace Rule<a class="headerlink" href="#namespace-rule" title="Permanent link">#</a></h3>
+<p>All engine code under <code>src/</code> and <code>include/</code> must reside inside <code>namespace database</code>. Never write <code>using namespace std;</code> in any header or translation unit.</p>
+<h3 id="naming-conventions">Naming Conventions<a class="headerlink" href="#naming-conventions" title="Permanent link">#</a></h3>
+<p>WhiskDB follows DuckDB-inspired naming conventions, partially verified via <code>clang-tidy</code>:</p>
 <table>
 <thead>
 <tr>
 <th>Target</th>
 <th>Convention</th>
 <th>Example</th>
+<th>Notes</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>Files</strong></td>
-<td>Lowercase with underscores (<code>snake_case</code>)</td>
-<td><code>abstract_operator.cpp</code></td>
+<td><code>snake_case</code></td>
+<td><code>wal_manager.cpp</code>, <code>sql_engine.hpp</code></td>
+<td>Match class concept name</td>
 </tr>
 <tr>
-<td><strong>Types</strong> (classes, structs, enums, aliases)</td>
-<td>Capitalized words (<code>PascalCase</code>)</td>
-<td><code>BaseColumn</code>, <code>TupleBuffer</code></td>
-</tr>
-<tr>
-<td><strong>Variables &amp; Members</strong></td>
-<td>Lowercase with underscores (<code>snake_case</code>)</td>
-<td><code>chunk_size</code>, <code>buffer_idx</code></td>
+<td><strong>Types</strong> (Classes, Structs, Enums, Aliases)</td>
+<td><code>PascalCase</code></td>
+<td><code>WhiskClient</code>, <code>WalManager</code>, <code>DurabilityMode</code></td>
+<td>Concrete and unambiguous</td>
 </tr>
 <tr>
 <td><strong>Functions &amp; Methods</strong></td>
-<td>Capitalized words (<code>PascalCase</code>)</td>
-<td><code>GetChunk()</code>, <code>ExecutePlan()</code></td>
+<td><code>PascalCase</code></td>
+<td><code>ExecuteQuery()</code>, <code>AppendRecord()</code>, <code>Recover()</code></td>
+<td>Verb-noun phrases</td>
+</tr>
+<tr>
+<td><strong>Variables &amp; Members</strong></td>
+<td><code>snake_case</code></td>
+<td><code>page_size</code>, <code>write_mutex_</code>, <code>is_active_</code></td>
+<td>Private members use trailing underscore</td>
 </tr>
 <tr>
 <td><strong>Loop Indices</strong></td>
 <td>Meaningful names in nested loops</td>
-<td><code>column_idx</code>, <code>row_idx</code> (<code>i</code> is only allowed in single loops)</td>
+<td><code>row_idx</code>, <code>col_idx</code>, <code>frame_idx</code></td>
+<td><code>i</code> is allowed only in single, flat loops</td>
 </tr>
 </tbody>
 </table>
-<p><em>(Note: These naming guidelines are partially enforced automatically by <code>clang-tidy</code>.)</em></p>
-<hr />
-<h3 id="error-handling-assertions">Error Handling &amp; Assertions</h3>
-<h4 id="exceptions-vs-return-values">Exceptions vs. Return Values</h4>
+<h3 id="types-memory-management">Types &amp; Memory Management<a class="headerlink" href="#types-memory-management" title="Permanent link">#</a></h3>
 <ul>
-<li><strong>Exceptions are for hard failures</strong>: Use exceptions only when an error terminates a query (such as SQL syntax errors, missing tables, or resource exhaustion).</li>
-<li><strong>Return values for normal flow</strong>: If an error is an expected situation that normal execution can handle, return a status or result code instead of throwing.</li>
-<li><strong>Test exception paths</strong>: Always write unit tests that trigger expected exceptions. If an error condition cannot be reproduced in a test, consider whether it should be an invariant assertion instead (rare cases like out-of-memory are exceptions).</li>
-</ul>
-<h4 id="assertions-with-d_assert">Assertions with <code>D_ASSERT</code></h4>
-<ul>
-<li><strong>Catch developer bugs</strong>: Use <code>D_ASSERT</code> to verify internal assumptions and developer errors. Assertions should never be triggered by invalid user input.</li>
-<li><strong>Assert generously with context</strong>: Add assertions whenever an assumption must hold, and always include a brief comment explaining the expected state:
+<li><strong>No Raw Allocation</strong>: Never invoke raw <code>new</code>, <code>delete</code>, or <code>malloc</code>. Use smart pointers for dynamic allocation.</li>
+<li><strong>Ownership Semantics</strong>: Default to <code>std::unique_ptr</code> for exclusive resource ownership. Use <code>std::shared_ptr</code> only when multiple distinct subsystems require shared lifetime.</li>
+<li><strong>Indices and Offsets</strong>: Use <code>idx_t</code> (<code>uint64_t</code>) instead of raw <code>size_t</code> for counts, offsets, and collection indices.</li>
+<li><strong>Fixed-Width Integers</strong>: Use explicit types (<code>int8_t</code>..<code>int64_t</code>, <code>uint8_t</code>..<code>uint64_t</code>) instead of ambiguous standard types like <code>int</code> or <code>long</code>.</li>
+<li><strong>Scoped Enums</strong>: Always declare <code>enum class</code>. Specify the underlying storage type (e.g., <code>: uint8_t</code>) when the enum is serialized over the wire or to disk:
   <code>cpp
-  // Validate that the target column index exists within bounds
-  D_ASSERT(column_idx &lt; column_count);</code></li>
+  enum class Opcode : uint8_t {
+      Ping = 0x01,
+      SqlQuery = 0x02,
+      WhiskPublish = 0x03,
+      WhiskCall = 0x04
+  };</code></li>
+<li><strong>Constants</strong>: Replace magic numbers with named <code>constexpr</code> constants.</li>
+</ul>
+<h3 id="control-flow-class-layout">Control Flow &amp; Class Layout<a class="headerlink" href="#control-flow-class-layout" title="Permanent link">#</a></h3>
+<ul>
+<li><strong>Explicit Braces</strong>: Always use <code>{}</code> braces for <code>if</code>, <code>else</code>, <code>for</code>, and <code>while</code> statements, even for single-line bodies.</li>
+<li><strong>Return Early</strong>: Guard clauses and early returns keep indentation shallow.</li>
+<li><strong>Virtual Overrides</strong>: Omit the <code>virtual</code> keyword on overriding member functions; use <code>override</code> or <code>final</code> exclusively.</li>
+<li><strong>Class Section Layout</strong>: Order class definitions consistently:
+  ```cpp
+  class ExampleManager {
+  public:
+      // 1. Constructors &amp; public member variables
+      ExampleManager();
+      ~ExampleManager();</li>
+</ul>
+<p>public:
+      // 2. Public member functions
+      Result<void> Initialize();</p>
+<p>private:
+      // 3. Private helper functions
+      Result<void> FlushBuffer();</p>
+<p>private:
+      // 4. Private member variables
+      std::string path_;
+      idx_t buffer_size_ = 0;
+  };
+  ```</p>
+<hr />
+<h2 id="3-error-handling-invariant-policy">3. Error Handling &amp; Invariant Policy<a class="headerlink" href="#3-error-handling-invariant-policy" title="Permanent link">#</a></h2>
+<p>WhiskDB enforces a strict distinction between operational errors and developer bugs:</p>
+<h3 id="operational-errors-resultt-errorcode">Operational Errors (<code>Result&lt;T&gt;</code> &amp; <code>ErrorCode</code>)<a class="headerlink" href="#operational-errors-resultt-errorcode" title="Permanent link">#</a></h3>
+<p>Expected runtime failures—such as network disconnects, invalid SQL syntax, table constraint violations, or missing files—must return <code>Result&lt;T&gt;</code> or status codes. Do not throw exceptions for expected operational flow.</p>
+<div class="codehilite"><pre><span></span><code><span class="n">Result</span><span class="o">&lt;</span><span class="n">QueryResult</span><span class="o">&gt;</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="n">Query</span><span class="p">(</span><span class="s">"SELECT * FROM invalid_table;"</span><span class="p">);</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">result</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">LOG_WARN</span><span class="p">(</span><span class="s">"Query failed: {}"</span><span class="p">,</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="n">error</span><span class="p">().</span><span class="n">Message</span><span class="p">());</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="n">error</span><span class="p">();</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h3 id="invariant-assertions-d_assert">Invariant Assertions (<code>D_ASSERT</code>)<a class="headerlink" href="#invariant-assertions-d_assert" title="Permanent link">#</a></h3>
+<p>Use <code>D_ASSERT(condition)</code> generously to verify internal assumptions and developer invariants. Every <code>D_ASSERT</code> must include an explanatory comment on the preceding line:</p>
+<div class="codehilite"><pre><span></span><code><span class="c1">// Ensure the payload does not exceed the maximum allowable wire frame size</span>
+<span class="n">D_ASSERT</span><span class="p">(</span><span class="n">payload_len</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="n">Framing</span><span class="o">::</span><span class="n">MAX_PAYLOAD_SIZE</span><span class="p">);</span>
+</code></pre></div>
+
+<p><code>D_ASSERT</code> checks are active in Debug builds and must <strong>never</strong> be triggered by external user input.</p>
+<h3 id="fatal-failures">Fatal Failures<a class="headerlink" href="#fatal-failures" title="Permanent link">#</a></h3>
+<p>Exceptions are reserved strictly for unrecoverable system failures, such as memory allocation exhaustion or unrecoverable disk corruption.</p>
+<hr />
+<h2 id="4-internal-subsystem-architecture">4. Internal Subsystem Architecture<a class="headerlink" href="#4-internal-subsystem-architecture" title="Permanent link">#</a></h2>
+<p>WhiskDB is composed of four modular internal subsystems:</p>
+<div class="codehilite"><pre><span></span><code>┌─────────────────────────────────────────────────────────────┐
+│                       whiskdb core                          │
+├─────────────────┬─────────────────┬─────────────────────────┤
+│ Network Layer   │ SQL Engine      │ Storage &amp; Durability    │
+├─────────────────┼─────────────────┼─────────────────────────┤
+│ - Framing       │ - SQLite3 :mem: │ - WalManager            │
+│ - Protocol      │ - Cache         │ - PosixFile             │
+│ - Asio Server   │ - ValueCodec    │ - SnapshotManager       │
+│ - TcpClient     │ - Savepoints    │ - CRC32 Verifier        │
+└─────────────────┴─────────────────┴─────────────────────────┘
+</code></pre></div>
+
+<h3 id="1-network-layer-includenetwork-srcnetwork">1. Network Layer (<code>include/network/</code>, <code>src/network/</code>)<a class="headerlink" href="#1-network-layer-includenetwork-srcnetwork" title="Permanent link">#</a></h3>
+<ul>
+<li><strong>Framing (<code>Framing</code>)</strong>: All packets use a 4-byte big-endian length prefix. Frames larger than <code>MAX_PAYLOAD_SIZE</code> (64 MB) are rejected.</li>
+<li><strong>Protocol (<code>Protocol</code>, <code>Request</code>, <code>Response</code>)</strong>: Requests include an <code>Opcode</code> (1 byte) followed by payload bytes. Responses include a status code (<code>ErrorCode</code>, 2 bytes), execution duration in microseconds (<code>exec_us</code>, 8 bytes), and response payload.</li>
+<li><strong>Asio Server (<code>Server</code>, <code>TcpSession</code>)</strong>: Scalable, non-blocking asynchronous TCP server running on standalone Asio. Sessions maintain dedicated receive buffers to minimize allocations.</li>
+</ul>
+<h3 id="2-sql-engine-layer-includesql-srcsql">2. SQL Engine Layer (<code>include/sql/</code>, <code>src/sql/</code>)<a class="headerlink" href="#2-sql-engine-layer-includesql-srcsql" title="Permanent link">#</a></h3>
+<ul>
+<li><strong>Engine Core (<code>SqlEngine</code>)</strong>: Wraps an in-memory SQLite3 handle (<code>:memory:</code>).</li>
+<li><strong>Statement Cache (<code>StatementCache</code>)</strong>: Prepared statement cache keyed by SQL text hash, eliminating parsing and compilation overhead on repetitive queries.</li>
+<li><strong>Value Codec (<code>ValueCodec</code>)</strong>: High-speed binary serializer and deserializer for SQL data types (<code>ValueType</code>: <code>Null</code>, <code>Int64</code>, <code>Double</code>, <code>Text</code>, <code>Blob</code>), facilitating zero-copy decoding across wire packets.</li>
+<li><strong>Transaction Guard (<code>TransactionGuard</code>)</strong>: Manages nested SQLite <code>SAVEPOINT</code> transactions with automatic rollback on error.</li>
+</ul>
+<h3 id="3-storage-durability-layer-includestorage-srcstorage">3. Storage &amp; Durability Layer (<code>include/storage/</code>, <code>src/storage/</code>)<a class="headerlink" href="#3-storage-durability-layer-includestorage-srcstorage" title="Permanent link">#</a></h3>
+<ul>
+<li><strong>Write-Ahead Log (<code>WalManager</code>)</strong>: Appends binary transaction records (<code>WalRecordType::SqlStatement</code>) protected by CRC32 checksums to <code>./data/db.wal</code>.</li>
+<li><strong>Durability Modes (<code>DurabilityMode</code>)</strong>: Configurable flush behavior (<code>Strict</code>, <code>GroupCommit</code>, <code>Relaxed</code>, <code>MemoryOnly</code>).</li>
+<li><strong>File I/O (<code>PosixFile</code>)</strong>: RAII POSIX file descriptor wrapper managing <code>open</code>, <code>pwrite</code>, <code>pread</code>, and <code>fdatasync</code>.</li>
+<li><strong>Snapshot Manager (<code>SnapshotManager</code>)</strong>: Serializes full database state to disk checkpoints (<code>snapshot.db</code>) and safely resets the WAL log upon reaching record limits.</li>
+</ul>
+<h3 id="4-client-sdk-cli-layer-includeclient-srcclient-app">4. Client SDK &amp; CLI Layer (<code>include/client/</code>, <code>src/client/</code>, <code>app/</code>)<a class="headerlink" href="#4-client-sdk-cli-layer-includeclient-srcclient-app" title="Permanent link">#</a></h3>
+<ul>
+<li><strong>WhiskClient (<code>WhiskClient</code>)</strong>: Native C++ client handling socket connection, handshake, query execution, and error unwrapping.</li>
+<li><strong>Table Formatter (<code>FormatResultTable</code>)</strong>: ASCII box-drawing table renderer with automatic column width calculation and execution metrics.</li>
+<li><strong>Interactive REPL (<code>app/whisk.cpp</code>)</strong>: Interactive terminal client with multi-line statement continuation (<code>SplitStatements</code>), dot command execution (<code>.help</code>, <code>.ping</code>, <code>.logs</code>, <code>.snapshot</code>), and ANSI color error highlighting.</li>
 </ul>
 <hr />
-<h3 id="ai-usage-policy">AI Usage Policy</h3>
-<p>AI coding assistants are helpful tools, but keep usage disciplined:
-- <strong>Take full ownership</strong>: Never submit AI-generated code that you do not fully understand and cannot explain or debug yourself.
-- <strong>Verify before submitting</strong>: Make sure any generated code adheres to our project conventions, passes tests, and doesn't introduce unwanted dependencies or formatting issues.</p>
-<hr />
-<h2 id="git-collaboration-workflow">Git &amp; Collaboration Workflow</h2>
-<h3 id="branching-strategy">Branching Strategy</h3>
+<h2 id="5-build-test-macros">5. Build &amp; Test Macros<a class="headerlink" href="#5-build-test-macros" title="Permanent link">#</a></h2>
+<p>WhiskDB provides unified development macros orchestrated by <code>scripts/macro.sh</code>:</p>
 <table>
 <thead>
 <tr>
-<th>Branch</th>
-<th>Purpose</th>
+<th>Macro</th>
+<th>Description</th>
+<th>Output Artifacts</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>main</code></td>
-<td>Production-ready, stable milestone releases. Protected.</td>
+<td><code>cmake build-debug</code></td>
+<td>Configures and builds all targets with Debug symbols and <code>-Wall -Wextra -Wpedantic</code></td>
+<td><code>build/debug/</code></td>
 </tr>
 <tr>
-<td><code>dev</code></td>
-<td>Active integration branch. All features merge here first.</td>
+<td><code>cmake build-release</code></td>
+<td>Configures and builds all targets with full <code>-O3</code> compiler optimizations</td>
+<td><code>build/release/</code></td>
+</tr>
+<tr>
+<td><code>cmake run-tests</code></td>
+<td>Compiles Debug target and executes all test suites via CTest with verbose failure logging</td>
+<td>Full CTest report</td>
+</tr>
+<tr>
+<td><code>cmake run-tests &lt;regex&gt;</code></td>
+<td>Runs only test suites matching the specified regex pattern (e.g., <code>cmake run-tests wal</code>)</td>
+<td>Filtered test results</td>
+</tr>
+<tr>
+<td><code>cmake bench</code></td>
+<td>Builds Release and runs standard persistence and throughput benchmarks</td>
+<td>Benchmark metrics</td>
+</tr>
+<tr>
+<td><code>cmake clean</code></td>
+<td>Removes all build directories (<code>build/debug/</code>, <code>build/release/</code>)</td>
+<td>Clean workspace</td>
 </tr>
 </tbody>
 </table>
-<h3 id="commit-message-convention">Commit Message Convention</h3>
-<p>Keep commit messages concise and descriptive using the standard format:
-- <code>feat: add index scan operator</code>
-- <code>fix: handle null values in buffer manager</code>
-- <code>docs: update developer guide conventions</code></p>
-<h3 id="pull-request-pr-checklist">Pull Request (PR) Checklist</h3>
-<p>Before submitting a PR for review, make sure:
-- [ ] Code follows our C++ style and naming conventions (passes <code>clang-tidy</code>).
-- [ ] No commented-out code blocks are left behind.
-- [ ] New functionality and exception paths are covered by tests.
-- [ ] Assertions use <code>D_ASSERT</code> with explanatory comments.
-- [ ] Any AI-assisted code has been fully reviewed, understood, and tested.</p></div>
+<hr />
+<h2 id="6-git-collaboration-workflow">6. Git &amp; Collaboration Workflow<a class="headerlink" href="#6-git-collaboration-workflow" title="Permanent link">#</a></h2>
+<p>Every contributor and agent must follow WhiskDB's mandatory 5-step development lifecycle:</p>
+<div class="codehilite"><pre><span></span><code>[GitHub Issue] ──&gt; [Branch off dev] ──&gt; [Code &amp; Test] ──&gt; [Commit &amp; Push] ──&gt; [Open Pull Request]
+</code></pre></div>
+
+<h3 id="1-check-update-github-issues">1. Check &amp; Update GitHub Issues<a class="headerlink" href="#1-check-update-github-issues" title="Permanent link">#</a></h3>
+<ul>
+<li>Inspect the target issue before writing code: <code>gh issue view &lt;issue-number&gt;</code>.</li>
+<li>Post an acknowledgement comment stating that work has begun in the feature branch.</li>
+</ul>
+<h3 id="2-dedicated-feature-branch-off-dev">2. Dedicated Feature Branch off <code>dev</code><a class="headerlink" href="#2-dedicated-feature-branch-off-dev" title="Permanent link">#</a></h3>
+<ul>
+<li>Always branch from the latest <code>dev</code> branch:
+  <code>sh
+  git checkout dev
+  git pull origin dev
+  git checkout -b feat/issue-&lt;issue-number&gt;-&lt;slug&gt;</code></li>
+</ul>
+<h3 id="3-build-test-verification">3. Build &amp; Test Verification<a class="headerlink" href="#3-build-test-verification" title="Permanent link">#</a></h3>
+<ul>
+<li>Ensure zero compiler warnings and 100% test pass rate:
+  <code>sh
+  cmake build-debug
+  cmake run-tests</code></li>
+</ul>
+<h3 id="4-conventional-commits">4. Conventional Commits<a class="headerlink" href="#4-conventional-commits" title="Permanent link">#</a></h3>
+<p>Use conventional commit prefixes:
+- <code>feat(scope): add feature description (Closes #N)</code>
+- <code>fix(scope): fix bug description (Closes #N)</code>
+- <code>docs(scope): update documentation</code>
+- <code>test(scope): add test coverage</code></p>
+<h3 id="5-pull-request-submission">5. Pull Request Submission<a class="headerlink" href="#5-pull-request-submission" title="Permanent link">#</a></h3>
+<ul>
+<li>Open the PR targeting <code>dev</code>:
+  <code>sh
+  gh pr create --base dev --head feat/issue-&lt;issue-number&gt;-&lt;slug&gt; --title "feat(scope): ..." --body "..."</code></li>
+<li>Reference the resolved issue (<code>Closes #N</code>) in the PR description. Work is complete only after the PR is submitted.</li>
+</ul></div>
             </div>
         </div>
 

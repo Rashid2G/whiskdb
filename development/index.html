@@ -8,7 +8,7 @@
         <meta name="author" content="WhiskDB Team">
         
         <link rel="shortcut icon" href="../img/favicon.ico">
-        <title>Development - WhiskDB</title>
+        <title>Development Status - WhiskDB</title>
         <link href="../css/bootstrap.min.css" rel="stylesheet">
         <link href="../css/fontawesome.min.css" rel="stylesheet">
         <link href="../css/brands.min.css" rel="stylesheet">
@@ -39,13 +39,13 @@
                                 <a href=".." class="nav-link">Home</a>
                             </li>
                             <li class="nav-item">
-                                <a href="./" class="nav-link active" aria-current="page">Development</a>
+                                <a href="../user-guide/" class="nav-link">User Guide</a>
                             </li>
                             <li class="nav-item">
                                 <a href="../developer-guide/" class="nav-link">Developer Guide</a>
                             </li>
                             <li class="nav-item">
-                                <a href="../user-guide/" class="nav-link">User Guide</a>
+                                <a href="./" class="nav-link active" aria-current="page">Development Status</a>
                             </li>
                         </ul>
 
@@ -56,12 +56,12 @@
                             </a>
                         </li>
                             <li class="nav-item">
-                                <a rel="prev" href=".." class="nav-link">
+                                <a rel="prev" href="../developer-guide/" class="nav-link">
                                     <i class="fa fa-arrow-left"></i> Previous
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a rel="next" href="../developer-guide/" class="nav-link">
+                                <a rel="next" class="nav-link disabled">
                                     Next <i class="fa fa-arrow-right"></i>
                                 </a>
                             </li>
@@ -117,13 +117,25 @@
     <div id="toc-collapse" class="navbar-collapse collapse card bg-body-tertiary">
         <ul class="nav flex-column">
             
-            <li class="nav-item" data-bs-level="1"><a href="#project-development" class="nav-link">Project Development</a>
+            <li class="nav-item" data-bs-level="1"><a href="#whiskdb-development-architecture" class="nav-link">WhiskDB Development &amp; Architecture</a>
               <ul class="nav flex-column">
-            <li class="nav-item" data-bs-level="2"><a href="#project-scope-objectives" class="nav-link">Project Scope &amp; Objectives</a>
+            <li class="nav-item" data-bs-level="2"><a href="#1-project-scope-objectives" class="nav-link">1. Project Scope &amp; Objectives</a>
               <ul class="nav flex-column">
               </ul>
             </li>
-            <li class="nav-item" data-bs-level="2"><a href="#external-libraries" class="nav-link">External Libraries</a>
+            <li class="nav-item" data-bs-level="2"><a href="#2-durability-modes-latency-profiles" class="nav-link">2. Durability Modes &amp; Latency Profiles</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#3-external-dependencies" class="nav-link">3. External Dependencies</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#4-development-milestone-roadmap" class="nav-link">4. Development Milestone Roadmap</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#next-steps" class="nav-link">Next Steps</a>
               <ul class="nav flex-column">
               </ul>
             </li>
@@ -134,27 +146,139 @@
 </div></div>
                     <div class="col-md-9" role="main">
 
-<h1 id="project-development">Project Development</h1>
-<div class="admonition note">
-<p class="admonition-title">Scope of this Page</p>
-<p>This page is focuses on the development progress. and the state of the project.</p>
-</div>
+<h1 id="whiskdb-development-architecture">WhiskDB Development &amp; Architecture<a class="headerlink" href="#whiskdb-development-architecture" title="Permanent link">#</a></h1>
+<p>This page outlines the architectural scope of WhiskDB, the durability and reliability model, external library dependencies, and current development milestone progress.</p>
 <hr />
-<h2 id="project-scope-objectives">Project Scope &amp; Objectives</h2>
+<h2 id="1-project-scope-objectives">1. Project Scope &amp; Objectives<a class="headerlink" href="#1-project-scope-objectives" title="Permanent link">#</a></h2>
+<p>WhiskDB is built around four primary engineering pillars:</p>
 <ol>
-<li><strong>Sandboxed Code Execution</strong></li>
-<li><strong>Zero-Copy In-Memory Access</strong></li>
-<li><strong>Persistence &amp; Crash Recovery</strong></li>
-<li><strong>Real-Time Client Subscriptions</strong></li>
+<li><strong>Sandboxed In-Engine Code Execution</strong>: Co-locating business logic with in-memory database state using sandboxed WebAssembly execution to eliminate database network hops.</li>
+<li><strong>Zero-Copy In-Memory Relational Access</strong>: Leveraging SQLite3 in <code>:memory:</code> mode coupled with prepared statement caching and binary value encoders for sub-millisecond query execution.</li>
+<li><strong>Flexible Durability &amp; Crash Recovery</strong>: Providing a high-performance write-ahead log (WAL) engine with configurable durability guarantees, CRC32 record integrity, and atomic checkpointing.</li>
+<li><strong>Persistent Binary Wire Protocol</strong>: Delivering low-latency client communication through length-prefixed binary framing, native C++ SDK bindings, and an interactive CLI shell.</li>
 </ol>
 <hr />
-<h2 id="external-libraries">External Libraries</h2>
-<p>WhiskDB integrates external libraries to support its architecture and objectives:</p>
+<h2 id="2-durability-modes-latency-profiles">2. Durability Modes &amp; Latency Profiles<a class="headerlink" href="#2-durability-modes-latency-profiles" title="Permanent link">#</a></h2>
+<p>WhiskDB supports four distinct durability modes (<code>DurabilityMode</code>) configured via <code>durability_mode</code> in <code>config.toml</code> or passed via the <code>--durability</code> CLI option. This allows deployments to tailor the trade-off between write latency and crash resilience:</p>
+<table>
+<thead>
+<tr>
+<th>Durability Mode</th>
+<th>Config Aliases</th>
+<th>Disk Flush Strategy</th>
+<th>Crash Guarantee</th>
+<th>Typical Latency</th>
+<th>Recommended Workload</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code>strict</code></strong></td>
+<td><code>sync</code></td>
+<td>Synchronous <code>fdatasync</code> on every committed transaction</td>
+<td>Zero data loss on sudden power loss or OS crash</td>
+<td>~1–5 ms (I/O bound)</td>
+<td>Financial ledgers, high-value transactional records</td>
+</tr>
+<tr>
+<td><strong><code>group_commit</code></strong> <em>(Default)</em></td>
+<td><code>batched</code></td>
+<td>In-memory WAL ring buffer flushed via batched <code>fdatasync</code> (e.g. periodic or batch threshold)</td>
+<td>Bounded data loss window (up to batch interval); zero loss on process crash</td>
+<td>~50–150 µs</td>
+<td>High-throughput OLTP, default production setting</td>
+</tr>
+<tr>
+<td><strong><code>relaxed</code></strong></td>
+<td><code>async</code></td>
+<td>WAL records written to OS page cache (<code>write()</code>); background asynchronous flush</td>
+<td>Survives process crashes; OS crash may lose unwritten page cache</td>
+<td>~5–15 µs</td>
+<td>Real-time gaming, telemetry, high-ingestion streams</td>
+</tr>
+<tr>
+<td><strong><code>memory_only</code></strong></td>
+<td><code>ephemeral</code></td>
+<td>WAL disabled entirely; pure <code>:memory:</code> execution</td>
+<td>Volatile; data is reset on process termination</td>
+<td>&lt; 2 µs</td>
+<td>Unit tests, ephemeral benchmarks, CI test runs</td>
+</tr>
+</tbody>
+</table>
+<h3 id="checkpointing-snapshotting">Checkpointing &amp; Snapshotting<a class="headerlink" href="#checkpointing-snapshotting" title="Permanent link">#</a></h3>
+<p>To keep WAL replay times fast during recovery, WhiskDB automatically checkpoints state when the number of accumulated mutations reaches <code>checkpoint_wal_records</code> (default: <code>100,000</code>):</p>
+<ol>
+<li><strong>Atomic Flush</strong>: The database engine writes a consistent snapshot (<code>snapshot.db</code>).</li>
+<li><strong>Log Truncation</strong>: Once the snapshot is verified on disk, the WAL file (<code>db.wal</code>) is truncated back to zero.</li>
+<li><strong>Crash Recovery</strong>: On startup, <code>Engine::Open()</code> inspects <code>./data</code>, loads the newest valid snapshot, and replays any trailing WAL records up to the crash point.</li>
+</ol>
+<hr />
+<h2 id="3-external-dependencies">3. External Dependencies<a class="headerlink" href="#3-external-dependencies" title="Permanent link">#</a></h2>
+<p>WhiskDB integrates lightweight, modern C++ libraries:</p>
+<table>
+<thead>
+<tr>
+<th>Library</th>
+<th>Header / Target</th>
+<th>Role in WhiskDB</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><a href="https://think-async.com/Asio/">Standalone Asio</a></strong></td>
+<td><code>asio.hpp</code> (<code>asio_headers</code>)</td>
+<td>Powers the asynchronous non-blocking TCP server and client network loops</td>
+</tr>
+<tr>
+<td><strong><a href="https://www.sqlite.org/">SQLite3</a></strong></td>
+<td><code>sqlite3.h</code> (<code>sqlite3_static</code>)</td>
+<td>In-memory relational storage engine, SQL execution, and transactional savepoints</td>
+</tr>
+<tr>
+<td><strong><a href="https://marzer.github.io/tomlplusplus/">toml++</a></strong></td>
+<td><code>toml++/toml.hpp</code> (<code>toml_headers</code>)</td>
+<td>Parses <code>config.toml</code> for engine options and durability configuration</td>
+</tr>
+<tr>
+<td><strong><a href="https://wasmtime.dev/">Wasmtime C API</a></strong></td>
+<td><code>wasm.h</code>, <code>wasmtime.h</code></td>
+<td>Sandboxed WebAssembly host engine <em>(in active development)</em></td>
+</tr>
+</tbody>
+</table>
+<h3 id="system-toolchain-requirements">System &amp; Toolchain Requirements<a class="headerlink" href="#system-toolchain-requirements" title="Permanent link">#</a></h3>
 <ul>
-<li><strong><a href="https://www.boost.org/doc/libs/release/libs/beast/">Boost.Beast</a></strong> (<code>boost/beast</code>): Networking and WebSocket protocol library built on top of <strong>Boost.Asio</strong>, powering WhiskDB's client connection handling and real-time subscription streaming.</li>
+<li><strong>Operating System</strong>: Linux <code>x86_64</code> (Ubuntu 24.04+ LTS, Debian Trixie 13)</li>
+<li><strong>Compiler</strong>: GCC 13+ or Clang 18+ with full C++23 standard support (<code>-std=c++23</code>)</li>
+<li><strong>Build System</strong>: CMake 3.21+ and Ninja or Make</li>
 </ul>
-<p>For detailed developer guidelines and conventions, see the <a href="../developer-guide/#external-libraries">Developer Guide</a>.</p>
-<hr /></div>
+<hr />
+<h2 id="4-development-milestone-roadmap">4. Development Milestone Roadmap<a class="headerlink" href="#4-development-milestone-roadmap" title="Permanent link">#</a></h2>
+<div class="codehilite"><pre><span></span><code>[Phase 1: Binary Protocol]  ──&gt;  [Phase 2: In-Memory SQL]  ──&gt;  [Phase 3: Durability &amp; WAL]
+                                                                        │
+                                                                        ▼
+[Phase 6: Reactive Feeds]  &lt;──  [Phase 5: WASM Host]     &lt;──  [Phase 4: C++ SDK &amp; CLI]
+</code></pre></div>
+
+<h3 id="completed-milestones">Completed Milestones<a class="headerlink" href="#completed-milestones" title="Permanent link">#</a></h3>
+<ul>
+<li>[x] <strong>Phase 1: Network &amp; Binary Framing</strong>: Length-prefixed wire protocol, opcode dispatch, and non-blocking Asio TCP server.</li>
+<li>[x] <strong>Phase 2: In-Memory SQL Engine</strong>: Embedded SQLite3 amalgamation, prepared statement caching, and binary <code>ValueCodec</code>.</li>
+<li>[x] <strong>Phase 3: Durability Engine</strong>: Binary WAL format, CRC32 checksum validation, 4 durability modes, and snapshot recovery.</li>
+<li>[x] <strong>Phase 4: Client Ecosystem</strong>: C++ Client SDK (<code>WhiskClient</code>), result table formatting, and interactive CLI REPL (<code>whisk</code>).</li>
+</ul>
+<h3 id="in-progress-planned-milestones">In Progress &amp; Planned Milestones<a class="headerlink" href="#in-progress-planned-milestones" title="Permanent link">#</a></h3>
+<ul>
+<li>[ ] <strong>Phase 5: WebAssembly Engine</strong>: Sandboxed runtime integration via Wasmtime C API (<code>whisk init</code>, <code>build</code>, <code>publish</code>, <code>call</code>).</li>
+<li>[ ] <strong>Phase 6: Real-Time Subscriptions</strong>: Reactive client subscriptions broadcasting table mutation diffs over persistent connections.</li>
+</ul>
+<hr />
+<h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link">#</a></h2>
+<ul>
+<li>Consult the <strong><a href="../user-guide/">User Guide</a></strong> for installation instructions, CLI usage, and the C++ Client SDK.</li>
+<li>Consult the <strong><a href="../developer-guide/">Developer Guide</a></strong> for coding standards, subsystem architecture, and build macros.</li>
+</ul></div>
             </div>
         </div>
 
