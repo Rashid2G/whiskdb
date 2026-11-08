@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-# Ensure ~/.whisk-tools/bin is in PATH if available
+# Ensure ~/.whisk-tools/bin and ~/.local/bin are in PATH if available
 if [ -d "$HOME/.whisk-tools/bin" ]; then
   export PATH="$HOME/.whisk-tools/bin:$PATH"
 fi
@@ -22,6 +22,10 @@ fi
 # Locate repository root
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
+
+# Configuration defaults
+WASMTIME_VERSION="${WASMTIME_VERSION:-v50.0.1}"
+INSTALL_PREFIX="${INSTALL_PREFIX:-/usr/local}"
 
 # -----------------------------------------------------------------------------
 # 1. OS & Architecture Detection
@@ -73,6 +77,16 @@ detect_os() {
 # -----------------------------------------------------------------------------
 # 2. Privileged Command Helper
 # -----------------------------------------------------------------------------
+can_run_privileged() {
+  if [ "$(id -u)" -eq 0 ]; then
+    return 0
+  fi
+  if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
 run_privileged() {
   if [ "$(id -u)" -eq 0 ]; then
     "$@"
@@ -148,9 +162,175 @@ install_packages() {
   echo "==> Package verification completed."
 }
 
+# -----------------------------------------------------------------------------
+# 4. Wasmtime C API Download & Installation
+# -----------------------------------------------------------------------------
+find_installed_wasmtime() {
+  local search_prefixes=(
+    "$INSTALL_PREFIX"
+    "/usr/local"
+    "/usr"
+    "$HOME/.local"
+    "$HOME/.whisk-tools"
+  )
+
+  for prefix in "${search_prefixes[@]}"; do
+    if [ -f "$prefix/include/wasmtime.h" ] && [ -f "$prefix/include/wasm.h" ]; then
+      if [ -f "$prefix/lib/libwasmtime.a" ] || [ -f "$prefix/lib/libwasmtime.so" ] || \
+         [ -f "$prefix/lib64/libwasmtime.a" ] || [ -f "$prefix/lib64/libwasmtime.so" ]; then
+        echo "$prefix"
+        return 0
+      fi
+    fi
+  done
+  return 1
+}
+
+install_wasmtime() {
+  echo "==> Checking Wasmtime C API installation..."
+
+  local existing_prefix
+  if existing_prefix="$(find_installed_wasmtime)"; then
+    echo "==> Wasmtime C API is already installed at: $existing_prefix"
+    return 0
+  fi
+
+  # Determine writable target directory
+  local target_prefix="$INSTALL_PREFIX"
+  local use_privileged=false
+  if [ -w "$target_prefix" ]; then
+    use_privileged=false
+  elif can_run_privileged; then
+    use_privileged=true
+  else
+    echo "Notice: $target_prefix is not writable and sudo is unavailable."
+    echo "Falling back to user-local directory: $HOME/.local"
+    target_prefix="$HOME/.local"
+    use_privileged=false
+  fi
+
+  local asset_name="wasmtime-${WASMTIME_VERSION}-x86_64-linux-c-api.tar.xz"
+  local tmp_dir
+  tmp_dir="$(mktemp -d -t whiskdb-wasmtime-XXXXXX)"
+  trap 'rm -rf "$tmp_dir"' EXIT
+
+  local tar_path="$tmp_dir/$asset_name"
+
+  echo "==> Downloading Wasmtime C API ($WASMTIME_VERSION)..."
+  # Check if pre-cached in /tmp
+  if [ -f "/tmp/$asset_name" ] && tar -tf "/tmp/$asset_name" >/dev/null 2>&1; then
+    echo "==> Using cached archive from /tmp/$asset_name"
+    tar_path="/tmp/$asset_name"
+  elif command -v gh >/dev/null 2>&1 && gh release download "$WASMTIME_VERSION" -R bytecodealliance/wasmtime -p "wasmtime-*-x86_64-linux-c-api.tar.xz" --dir "$tmp_dir" 2>/dev/null; then
+    tar_path="$tmp_dir/$asset_name"
+  elif command -v curl >/dev/null 2>&1; then
+    local download_url="https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/${asset_name}"
+    if ! curl -fsSL --retry 3 --connect-timeout 15 "$download_url" -o "$tar_path" 2>/dev/null; then
+      echo "Notice: Direct release download timed out or was blocked. Trying GitHub API..."
+      local asset_id
+      asset_id="$(curl -s "https://api.github.com/repos/bytecodealliance/wasmtime/releases/tags/${WASMTIME_VERSION}" | grep -B 2 -A 3 "${asset_name}" | grep '"id":' | head -n 1 | tr -dc '0-9')"
+      if [ -n "$asset_id" ]; then
+        curl -sL -H "Accept: application/octet-stream" "https://api.github.com/repos/bytecodealliance/wasmtime/releases/assets/${asset_id}" -o "$tar_path"
+      fi
+    fi
+  fi
+
+  if [ ! -f "$tar_path" ] || ! tar -tf "$tar_path" >/dev/null 2>&1; then
+    echo "Error: Failed to download a valid Wasmtime C API archive." >&2
+    exit 1
+  fi
+
+  echo "==> Extracting Wasmtime C API archive..."
+  tar -xf "$tar_path" -C "$tmp_dir"
+
+  local extracted_dir="$tmp_dir/wasmtime-${WASMTIME_VERSION}-x86_64-linux-c-api"
+  if [ ! -d "$extracted_dir" ]; then
+    echo "Error: Expected extracted directory not found: $extracted_dir" >&2
+    exit 1
+  fi
+
+  echo "==> Installing Wasmtime C API to $target_prefix..."
+  if [ "$use_privileged" = "true" ]; then
+    run_privileged mkdir -p "$target_prefix/include" "$target_prefix/lib"
+    run_privileged cp -r "$extracted_dir"/include/* "$target_prefix/include/"
+    run_privileged cp -P "$extracted_dir"/lib/* "$target_prefix/lib/"
+    if command -v ldconfig >/dev/null 2>&1 && [ "$target_prefix" = "/usr/local" ]; then
+      run_privileged ldconfig 2>/dev/null || true
+    fi
+  else
+    mkdir -p "$target_prefix/include" "$target_prefix/lib"
+    cp -r "$extracted_dir"/include/* "$target_prefix/include/"
+    cp -P "$extracted_dir"/lib/* "$target_prefix/lib/"
+  fi
+
+  # Verify installation
+  if [ -f "$target_prefix/include/wasmtime.h" ] && { [ -f "$target_prefix/lib/libwasmtime.a" ] || [ -f "$target_prefix/lib/libwasmtime.so" ]; }; then
+    echo "==> Wasmtime C API ($WASMTIME_VERSION) successfully installed at $target_prefix."
+  else
+    echo "Error: Wasmtime C API installation verification failed at $target_prefix." >&2
+    exit 1
+  fi
+
+  rm -rf "$tmp_dir"
+  trap - EXIT
+}
+
+# -----------------------------------------------------------------------------
+# 5. Verify clang++ --target=wasm32 Compilation
+# -----------------------------------------------------------------------------
+verify_wasm_compiler() {
+  echo "==> Verifying clang++ --target=wasm32 compilation capability..."
+
+  if ! command -v clang++ >/dev/null 2>&1; then
+    echo "Error: clang++ compiler executable not found in PATH." >&2
+    exit 1
+  fi
+
+  local tmp_dir
+  tmp_dir="$(mktemp -d -t whiskdb-wasm-verify-XXXXXX)"
+  trap 'rm -rf "$tmp_dir"' EXIT
+
+  local src_file="$tmp_dir/test_wasm.cpp"
+  local out_file="$tmp_dir/test_wasm.o"
+
+  cat << 'EOF' > "$src_file"
+extern "C" int whiskdb_wasm_verify(int a, int b) {
+    return a + b;
+}
+EOF
+
+  if ! clang++ --target=wasm32 -c "$src_file" -o "$out_file" >/dev/null 2>&1; then
+    echo "Error: clang++ failed to compile C++ source targeting wasm32." >&2
+    rm -rf "$tmp_dir"
+    exit 1
+  fi
+
+  if [ ! -f "$out_file" ]; then
+    echo "Error: Expected wasm object file was not generated: $out_file" >&2
+    rm -rf "$tmp_dir"
+    exit 1
+  fi
+
+  # Verify WebAssembly binary magic bytes (0x00 0x61 0x73 0x6d / '\0asm')
+  local magic
+  magic="$(od -An -N 4 -t x1 "$out_file" | tr -d ' \n')"
+  if [ "$magic" != "0061736d" ]; then
+    echo "Error: Compiled object does not contain valid WebAssembly magic bytes (got: $magic)." >&2
+    rm -rf "$tmp_dir"
+    exit 1
+  fi
+
+  rm -rf "$tmp_dir"
+  trap - EXIT
+
+  echo "==> Verified clang++ --target=wasm32 compilation capability successfully."
+}
+
 main() {
   detect_os
   install_packages
+  install_wasmtime
+  verify_wasm_compiler
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
