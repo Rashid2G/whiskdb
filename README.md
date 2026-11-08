@@ -36,3 +36,4 @@ Visit the `docs/` directory for architecture notes, coding conventions, and deve
 - **Abdullah Al Tamsha**
 - **Ibrahim Jamil Karaja**
 - **Rashid Alkatheri**
+
