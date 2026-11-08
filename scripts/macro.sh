@@ -82,6 +82,11 @@ cmd_clean() {
   echo "Clean complete."
 }
 
+cmd_setup_dev() {
+  echo "==> Running WhiskDB developer environment setup..."
+  "$REPO_ROOT/scripts/setup-dev.sh" "$@"
+}
+
 cmd_help() {
   cat <<'EOF'
 WhiskDB Macro Commands:
@@ -90,6 +95,7 @@ WhiskDB Macro Commands:
   run-tests      Build Debug & execute all ctest suites with diagnostics
   bench          Build Release & run WhiskDB persistence benchmark
   bench-compare  Run benchmark comparison against specified branch (default: master)
+  setup-dev      Set up developer environment dependencies and toolchains
   clean          Remove build directories
 
 Adding New Macros:
@@ -116,6 +122,9 @@ case "$SUBCOMMAND" in
     ;;
   bench-compare|benchmark-compare)
     cmd_bench_compare "$@"
+    ;;
+  setup-dev|setup)
+    cmd_setup_dev "$@"
     ;;
   clean)
     cmd_clean "$@"
