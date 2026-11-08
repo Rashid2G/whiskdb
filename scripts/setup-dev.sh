@@ -8,6 +8,13 @@
 #
 # Usage:
 #   ./scripts/setup-dev.sh [options]
+#
+# Options:
+#   --skip-build              Skip debug build verification at the end
+#   --skip-tests              Skip running ctest test suite at the end
+#   --prefix <dir>            Installation prefix for Wasmtime (default: /usr/local)
+#   --wasmtime-version <ver>  Wasmtime release version (default: v50.0.1)
+#   --help, -h                Show this help message
 
 set -euo pipefail
 
@@ -26,9 +33,60 @@ cd "$REPO_ROOT"
 # Configuration defaults
 WASMTIME_VERSION="${WASMTIME_VERSION:-v50.0.1}"
 INSTALL_PREFIX="${INSTALL_PREFIX:-/usr/local}"
+SKIP_BUILD=false
+SKIP_TESTS=false
 
 # -----------------------------------------------------------------------------
-# 1. OS & Architecture Detection
+# 1. Parse Command Line Arguments
+# -----------------------------------------------------------------------------
+parse_args() {
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --skip-build)
+        SKIP_BUILD=true
+        shift
+        ;;
+      --skip-tests)
+        SKIP_TESTS=true
+        shift
+        ;;
+      --prefix)
+        INSTALL_PREFIX="$2"
+        shift 2
+        ;;
+      --wasmtime-version)
+        WASMTIME_VERSION="$2"
+        shift 2
+        ;;
+      -h|--help)
+        cat <<'EOF'
+WhiskDB Development Setup Script:
+Usage: scripts/setup-dev.sh [options]
+
+Supported OS:
+  - Ubuntu 24.04+ (x86_64)
+  - Debian 13 (Trixie) (x86_64)
+
+Options:
+  --skip-build              Skip the post-setup Debug build verification
+  --skip-tests              Skip the post-setup CTest test suite run
+  --prefix <dir>            Wasmtime C API install prefix (default: /usr/local)
+  --wasmtime-version <ver>  Wasmtime C API release version (default: v50.0.1)
+  -h, --help                Show this help message
+EOF
+        exit 0
+        ;;
+      *)
+        echo "Unknown option: $1" >&2
+        echo "Run '$0 --help' for usage." >&2
+        exit 1
+        ;;
+    esac
+  done
+}
+
+# -----------------------------------------------------------------------------
+# 2. OS & Architecture Detection
 # -----------------------------------------------------------------------------
 detect_os() {
   local arch
@@ -75,7 +133,7 @@ detect_os() {
 }
 
 # -----------------------------------------------------------------------------
-# 2. Privileged Command Helper
+# 3. Privileged Command Helper
 # -----------------------------------------------------------------------------
 can_run_privileged() {
   if [ "$(id -u)" -eq 0 ]; then
@@ -99,7 +157,7 @@ run_privileged() {
 }
 
 # -----------------------------------------------------------------------------
-# 3. Package Verification & Installation
+# 4. Package Verification & Installation
 # -----------------------------------------------------------------------------
 install_packages() {
   echo "==> Checking required system packages..."
@@ -163,7 +221,7 @@ install_packages() {
 }
 
 # -----------------------------------------------------------------------------
-# 4. Wasmtime C API Download & Installation
+# 5. Wasmtime C API Download & Installation
 # -----------------------------------------------------------------------------
 find_installed_wasmtime() {
   local search_prefixes=(
@@ -276,7 +334,7 @@ install_wasmtime() {
 }
 
 # -----------------------------------------------------------------------------
-# 5. Verify clang++ --target=wasm32 Compilation
+# 6. Verify clang++ --target=wasm32 Compilation
 # -----------------------------------------------------------------------------
 verify_wasm_compiler() {
   echo "==> Verifying clang++ --target=wasm32 compilation capability..."
@@ -326,11 +384,33 @@ EOF
   echo "==> Verified clang++ --target=wasm32 compilation capability successfully."
 }
 
+# -----------------------------------------------------------------------------
+# 7. Verification Build & Test Execution
+# -----------------------------------------------------------------------------
+verify_build_and_tests() {
+  if [ "$SKIP_BUILD" = "true" ]; then
+    echo "==> Skipping build verification (--skip-build requested)."
+  else
+    echo "==> Running verification build (cmake build-debug)..."
+    cmake build-debug
+  fi
+
+  if [ "$SKIP_TESTS" = "true" ]; then
+    echo "==> Skipping test suite verification (--skip-tests requested)."
+  else
+    echo "==> Running verification test suite (cmake run-tests)..."
+    cmake run-tests
+  fi
+}
+
 main() {
+  parse_args "$@"
   detect_os
   install_packages
   install_wasmtime
   verify_wasm_compiler
+  verify_build_and_tests
+  echo "==> WhiskDB developer environment setup completed successfully!"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
