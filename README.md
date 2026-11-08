@@ -31,7 +31,7 @@ Visit the `docs/` directory for architecture notes, coding conventions, and deve
 
 ---
 
-## Team
+## Team:
 
 - **Abdullah Al Tamsha**
 - **Ibrahim Jamil Karaja**
