@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    name: Build & Test
+    name: Build & Test (Ubuntu 24.04 + Sanitizers)
     runs-on: ubuntu-24.04
 
     steps:
@@ -20,15 +20,21 @@ jobs:
       - name: Install Build Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build g++-14 libsqlite3-dev
+          sudo apt-get install -y cmake ninja-build g++-14 libsqlite3-dev clang-tidy
 
-      - name: Configure Debug Build
+      - name: Verify Clang-Tidy Configuration
+        run: |
+          clang-tidy --version
+          clang-tidy --dump-config
+
+      - name: Configure Debug Build with Sanitizers (ASAN / UBSAN)
         env:
           CC: gcc-14
           CXX: g++-14
         run: |
           cmake -S . -B build/debug -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
+            -DWHISKDB_SANITIZE=ON \
             -DCMAKE_C_COMPILER=gcc-14 \
             -DCMAKE_CXX_COMPILER=g++-14
 
