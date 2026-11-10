@@ -16,9 +16,9 @@ WhiskDB is a high-performance, in-memory relational database and WebAssembly app
 | `whiskdb-review` | Reviewing a PR or checking work before merge |
 | `whiskdb-mkdocs` | Updating anything under `docs/` |
 
-**Flow:** issue → branch off `dev` → implement + tests → green `ctest` → PR to `dev` closing the issue.
+**Flow:** issue → comment on issue → branch off `dev` → implement + tests → green `ctest` → PR to `dev` (with `Closes #<N>` if completely solved, or `Part of #<N>` if partial).
 
-**Definition of done:** acceptance criteria met, tests added and passing, docs updated when behaviour/config/CLI changed, PR contains real command output and measured numbers (never estimated).
+**Definition of done:** acceptance criteria met, tests added and passing, docs updated when behaviour/config/CLI changed, PR contains real command output and measured numbers (never estimated), and PR links the issue.
 
 ---
 
@@ -133,10 +133,13 @@ Every agent MUST adhere to this strict 5-step development lifecycle. **Never fin
 - **1 Issue = 1 Branch = 1 PR:** Every task starts as a tracked GitHub Issue with clear Acceptance Criteria and Test Requirements.
 - **Commits:** Conventional commits (`feat: ...`, `fix: ...`, `refactor: ...`, `test: ...`, `docs: ...`).
 - **Target branch:** Always `dev` (`main`/`master` is reserved for stable milestone releases).
+- **Issue Linking & Auto-Close:**
+  - **Full solution (closes the issue):** If the PR satisfies all requirements of the issue, include `Closes #<N>` in the commit message and PR body. The issue will automatically close once the PR is merged.
+  - **Partial solution (incomplete issue):** If the PR does NOT solve everything the issue requires, use `Part of #<N>` or `Related to #<N>`. **Do NOT use `Closes #<N>`.** The issue will remain open until the final PR is merged.
 - **Evidence:** Every PR and review states the exact commands run and the real results (test pass counts, measured latency/throughput/memory). Never claim performance without a measurement.
 
 ```
-[GitHub Issue] ──> [Branch off dev] ──> [Code & Test] ──> [Commit & Push] ──> [Open Pull Request & Link Issue]
+[GitHub Issue] ──> [Comment on Issue] ──> [Branch off dev] ──> [Code & Test] ──> [Commit & Push] ──> [Open PR & Link Issue]
 ```
 
 ### Step 1: Check & Update GitHub Issues (MANDATORY START)
@@ -144,8 +147,10 @@ Every agent MUST adhere to this strict 5-step development lifecycle. **Never fin
 - Inspect the target issue: `gh issue view <issue-number>`.
 - If an issue does not exist for the assigned task, create one first:
   `gh issue create --title "<type>(<scope>): <summary>" --body "<details>" --label "..."`.
-- Post a comment on the issue stating that work has started:
-  `gh issue comment <issue-number> --body "Starting work on this issue in branch feat/issue-<issue-number>-<slug>."`.
+- Leave a comment stating that you are starting work on this issue:
+  ```bash
+  gh issue comment <issue-number> --body "Starting work on this issue in branch feat/issue-<issue-number>-<slug>."
+  ```
 
 ### Step 2: Create a Dedicated Feature Branch off `dev`
 - Always synchronize `dev` first:
@@ -168,21 +173,35 @@ Every agent MUST adhere to this strict 5-step development lifecycle. **Never fin
 - Ensure zero compiler warnings and all tests pass cleanly before proceeding to commit.
 
 ### Step 4: Conventional Commit & Push
-- Use conventional commit messages referencing the issue:
+- Use conventional commit messages:
+  - If PR completes the issue:
+    ```bash
+    git add <changed-files>
+    git commit -m "feat(<scope>): <description> (Closes #<N>)"
+    ```
+  - If PR is only partial work:
+    ```bash
+    git add <changed-files>
+    git commit -m "feat(<scope>): <description> (Part of #<N>)"
+    ```
+- Push to origin:
   ```bash
-  git add <changed-files>
-  git commit -m "feat(<scope>): <description> (Closes #<N>)"
   git push -u origin feat/issue-<N>-<short-slug>
   ```
 
 ### Step 5: Open Pull Request & Link Issue (MANDATORY COMPLETION)
 - **CRITICAL:** An agent has NOT completed their task until the Pull Request is created on GitHub. Never stop at a local commit or branch push.
 - Target branch is ALWAYS `dev`:
-  ```bash
-  gh pr create --base dev --head feat/issue-<N>-<short-slug> \
-    --title "feat(<scope>): <short description>" \
-    --body "## Summary\n<brief explanation of changes>\n\n## Verification\n- \`cmake run-tests\` passed\n\nCloses #<N>"
-  ```
+  - **If this PR completely resolves the issue:**
+    ```bash
+    gh pr create --base dev --head feat/issue-<N>-<short-slug> \
+      --title "feat(<scope>): <short description>" \
+      --body "## Summary\n<brief explanation of changes>\n\n## Verification\n- \`cmake run-tests\` passed\n\nCloses #<N>"
+    ```
+  - **If this PR is only partial work (issue remains open):**
+    ```bash
+    gh pr create --base dev --head feat/issue-<N>-<short-slug> \
+      --title "feat(<scope>): <short description>" \
+      --body "## Summary\n<brief explanation of changes>\n\n## Verification\n- \`cmake run-tests\` passed\n\nPart of #<N>"
+    ```
 - If the tool `link_pull_request` is available in your agent harness, immediately call `link_pull_request` with the new PR URL.
-- Once merged or verified, ensure the associated issue is closed:
-  `gh issue close <N> --comment "Closed by PR #<PR-number>."`.

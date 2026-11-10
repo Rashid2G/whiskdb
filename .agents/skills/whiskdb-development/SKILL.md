@@ -51,7 +51,7 @@ To add a new script macro (e.g., `benchmark`, `coverage`, `lint`):
 
 1. **Check & Update Issue**:
    - Always find the relevant GitHub Issue first: `gh issue list` / `gh issue view <N>`.
-   - Comment on the issue stating work is starting: `gh issue comment <N> --body "Starting work on..."`.
+   - Comment on the issue stating work is starting: `gh issue comment <N> --body "Starting work on this issue in branch feat/issue-<N>-<short-slug>."`.
 2. **Feature Branch from `dev`**:
    - `git checkout dev && git pull origin dev`
    - `git checkout -b feat/issue-<N>-<short-slug>`
@@ -60,8 +60,10 @@ To add a new script macro (e.g., `benchmark`, `coverage`, `lint`):
    - Run test suite: `cmake run-tests`
    - Zero compiler warnings (`-Wall -Wextra -Wpedantic`) and zero UBSan errors.
 4. **Commit**:
-   - Conventional commit referencing the issue: `feat(scope): <message> (Closes #<N>)`.
+   - Complete solution: `feat(scope): <message> (Closes #<N>)`
+   - Partial solution: `feat(scope): <message> (Part of #<N>)`
 5. **Push & Create Pull Request (MANDATORY)**:
    - `git push -u origin <branch>`
-   - `gh pr create --base dev --head <branch> --title "..." --body "Closes #<N> ..."`
+   - Final PR (completes issue): `gh pr create --base dev --head <branch> --title "..." --body "Closes #<N> ..."`
+   - Partial PR (leaves issue open): `gh pr create --base dev --head <branch> --title "..." --body "Part of #<N> ..."`
    - **Never finish a task without opening or updating the Pull Request.**

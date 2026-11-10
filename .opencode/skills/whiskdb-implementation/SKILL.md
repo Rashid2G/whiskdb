@@ -21,6 +21,7 @@ git fetch origin
 git switch dev && git pull --ff-only
 git switch -c feat/issue-<N>-<slug>   # fix/... or docs/...
 gh issue view <N>
+gh issue comment <N> --body "Starting work on this issue in branch feat/issue-<N>-<slug>."
 ```
 
 Never commit directly to `dev` or `main`. One issue = one branch = one PR.
@@ -96,5 +97,5 @@ Paste the actual command and output:
 - Issue acceptance criteria met.
 - New tests registered in `CMakeLists.txt` and passing.
 - `ctest --output-on-failure` fully green.
-- PR targets `dev`, closes the issue, and includes real output.
+- PR targets `dev`, links the issue (`Closes #<N>` if complete, or `Part of #<N>` if partial), and includes real output.
 - No unrelated files in the diff.

@@ -49,7 +49,7 @@ Rules:
 
 **Scope**
 - [ ] Branch is based on `dev`, named `feat|fix|docs/issue-<N>-<slug>`.
-- [ ] PR body has `Closes #<N>` and matches the issue.
+- [ ] PR body links the issue (`Closes #<N>` if solving completely, or `Part of #<N>` if partial).
 - [ ] No unrelated files, debug prints, or commented-out code.
 
 **Correctness**
