@@ -1,0 +1,58 @@
+---
+# WhiskDB Modern C++23 clang-tidy configuration
+# Enforces DuckDB-style C++23 guidelines, PascalCase types/methods, and snake_case variables.
+
+Checks: >
+  -*,
+  bugprone-*,
+  clang-analyzer-*,
+  cppcoreguidelines-*,
+  modernize-*,
+  performance-*,
+  readability-*,
+  -modernize-use-trailing-return-type,
+  -readability-braces-around-statements,
+  -readability-magic-numbers,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-type-reinterpret-cast
+
+WarningsAsErrors: ''
+HeaderFilterRegex: '(src|include|app|tests)/.*'
+
+CheckOptions:
+  # C++23 Modernization Options
+  modernize-use-std-print.ReplacementHeader: '<print>'
+
+  # Namespaces: core engine code resides in namespace database
+  readability-identifier-naming.NamespaceCase: lower_case
+  readability-identifier-naming.NamespaceIgnoredRegexp: 'database|std|boost|asio'
+
+  # Types (Classes, Structs, Enums, Aliases) -> PascalCase (CamelCase in clang-tidy)
+  readability-identifier-naming.ClassCase: CamelCase
+  readability-identifier-naming.StructCase: CamelCase
+  readability-identifier-naming.EnumCase: CamelCase
+  readability-identifier-naming.EnumConstantCase: CamelCase
+  readability-identifier-naming.TypeAliasCase: CamelCase
+  readability-identifier-naming.TypedefCase: CamelCase
+  readability-identifier-naming.TemplateParameterCase: CamelCase
+
+  # Functions & Methods -> PascalCase (CamelCase in clang-tidy)
+  readability-identifier-naming.FunctionCase: CamelCase
+  readability-identifier-naming.MethodCase: CamelCase
+  readability-identifier-naming.ClassMethodCase: CamelCase
+
+  # Variables, Members, and Parameters -> snake_case (lower_case in clang-tidy)
+  readability-identifier-naming.VariableCase: lower_case
+  readability-identifier-naming.ParameterCase: lower_case
+  readability-identifier-naming.MemberCase: lower_case
+  readability-identifier-naming.ClassMemberCase: lower_case
+  readability-identifier-naming.LocalVariableCase: lower_case
+  readability-identifier-naming.GlobalVariableCase: lower_case
+
+  # Constants and Preprocessor
+  readability-identifier-naming.ConstexprVariableCase: CamelCase
+  readability-identifier-naming.ConstantCase: UPPER_CASE
+  readability-identifier-naming.ConstantMemberCase: UPPER_CASE
+  readability-identifier-naming.MacroDefinitionCase: UPPER_CASE
+...
