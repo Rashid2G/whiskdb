@@ -6,21 +6,32 @@ Welcome to the WhiskDB Developer Guide. This document defines the engineering st
 
 ## External Libraries
 
-WhiskDB leverages external C++ libraries for low-level networking, protocols, and performance-critical operations:
+WhiskDB leverages external C++ libraries for low-level networking, protocols, storage, bytecode sandboxing, and configuration parsing:
 
 | Library | Component / Header | Purpose | Description |
 |---|---|---|---|
+| **[Asio](https://think-async.com/Asio/)** | `asio` (`#include <asio.hpp>`) | Asynchronous Network I/O | Standalone, non-blocking asynchronous I/O and event loop framework driving WhiskDB's client/server TCP communication and framing. |
+| **[SQLite3](https://www.sqlite.org/)** | `sqlite3` (`#include <sqlite3.h>`) | Relational Storage & SQL Engine | Embedded SQL engine compiled via C-amalgamation, responsible for B-tree index management, SQL dialect execution, and in-memory table structures. |
+| **[Wasmtime](https://wasmtime.dev/)** (`libwasmtime`) | `wasmtime` (`#include <wasmtime.h>`) | Sandboxed Bytecode Execution | High-performance, memory-safe WebAssembly runtime executing user-defined Whisk functions in-engine with near-instant instantiation and resource metering. |
+| **[toml++](https://marzer.github.io/tomlplusplus/)** (`tomlplusplus`) | `tomlplusplus` (`#include <toml++/toml.hpp>`) | Configuration Parsing | Header-only modern C++ library for loading, parsing, and validating TOML-based database configuration files (`config.toml`). |
 | **[Boost.Beast](https://www.boost.org/doc/libs/release/libs/beast/)** | `boost/beast` (`#include <boost/beast.hpp>`) | Networking & WebSocket | Provides HTTP and WebSocket protocol implementations built on top of **Boost.Asio**. Powers WhiskDB's client connection handling, real-time reactive subscriptions, and network communication layer. |
 
-### Boost.Beast Details
+### Component Integration Details
 
-- **Header & Namespace**: `<boost/beast.hpp>`, `boost::beast` (with `boost::beast::websocket`)
-- **Underlying I/O Engine**: Built on top of **Boost.Asio** (`boost::asio`) for scalable, asynchronous, non-blocking network I/O.
-- **Key Responsibilities**:
-    - **WebSocket Protocol Handling**: Manages full RFC 6455 compliance, including handshake negotiation, framing, binary and text messages, and ping/pong keep-alives.
-    - **Real-Time Client Subscriptions**: Powers the network communication layer that broadcasts data mutations and subscription updates to connected clients with low latency.
-    - **Zero-Copy Buffer Integration**: Interoperates with memory buffers efficiently to match WhiskDB's in-engine execution model.
-- **Integration & Build**: Managed via **vcpkg** (`vcpkg.json`) and linked in `CMakeLists.txt` via CMake's `find_package(Boost REQUIRED)`.
+- **Asio**:
+    - Standalone header-only integration (`ASIO_STANDALONE`) linked via `asio_headers`.
+    - Handles asynchronous socket read/write operations and connection lifecycle without runtime thread explosion.
+- **SQLite3**:
+    - Integrated as an amalgamation source build (`sqlite3.c`) compiled statically with `-DSQLITE_THREADSAFE=1 -DSQLITE_OMIT_LOAD_EXTENSION=1`.
+    - Provides zero-copy in-memory execution and prepared statement caching.
+- **Wasmtime (`libwasmtime`)**:
+    - Pre-compiles and caches `.wasm` modules to enable microsecond execution latency for server-side Whisks.
+    - Enforces strict memory sandboxing, gas/fuel limiting, and transactional savepoints during module invocations.
+- **toml++ (`tomlplusplus`)**:
+    - Modern C++23 header-only TOML library (`toml_headers`) for reading engine options, network bindings, and durability modes.
+- **Boost.Beast**:
+    - Managed via **vcpkg** (`vcpkg.json`) and linked in `CMakeLists.txt` via CMake's `find_package(Boost REQUIRED)`.
+    - Implements RFC 6455 WebSocket framing for real-time subscription streaming and binary message passing.
 
 ---
 
@@ -142,7 +153,7 @@ Standard development operations can be executed with short unified macros:
 | `cmake bench-compare [branch]` | Compares performance metrics against specified branch (default: `master`) |
 | `cmake clean` | Removes build directories |
 
-*All macros are implemented in [`scripts/macro.sh`](../scripts/macro.sh) and can be extended by adding new command functions.*
+*All macros are implemented in [`scripts/macro.sh`](https://github.com/Rashid2G/whiskdb/blob/dev/scripts/macro.sh) and can be extended by adding new command functions.*
 
 ---
 
@@ -192,4 +203,19 @@ Before submitting a PR for review, make sure:
 - [ ] Assertions use `D_ASSERT` with explanatory comments.
 - [ ] PR targets `dev` and references `Closes #<N>`.
 - [ ] Any AI-assisted code has been fully reviewed, understood, and tested.
+
+---
+
+## Academic Context & Project Team
+
+WhiskDB is developed as part of the Senior Capstone Graduation Project at **[OSTİM Technical University](https://www.ostimteknik.edu.tr/)** (Department of Software Engineering).
+
+### Project Team
+
+| Student Number | Full Name | Program |
+|---|---|---|
+| `230208916` | **Abdullah Al Tamsha** | Software Engineering |
+| `230208879` | **Ibrahim Jamil Karaja** | Software Engineering |
+| `230208843` | **Rashid Alkatheri** | Software Engineering |
+
 
