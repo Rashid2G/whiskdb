@@ -33,7 +33,7 @@ enum class ErrorCode : uint16_t {
     NotImplemented,
     Timeout,
 
-    // Storage & Data
+    // Storage & Data (including SQL relational entity errors)
     NotFound,
     KeyNotFound,
     TableDoesNotExist,
@@ -272,8 +272,8 @@ namespace Database = database;
     #define D_ASSERT_MSG(cond, msg) \
         do { \
             if (!(cond)) { \
-                LOG_FATAL("Assertion failed: ({}) - {} [{}:{}]", \
-                          #cond, msg, database::extract_filename(__FILE__), __LINE__); \
+                LOG_FATAL("Assertion failed: ({}) - {} [{}:{}:{}]", \
+                          #cond, msg, database::extract_filename(__FILE__), __LINE__, __func__); \
                 std::abort(); \
             } \
         } while (false)
