@@ -5,6 +5,10 @@
 
 namespace database {
 
+/**
+ * @brief Top-level exception boundary handler for unhandled exceptions.
+ * Inspects std::current_exception() and logs with FATAL severity before termination.
+ */
 void HandleTopLevelException(std::source_location loc) noexcept {
     const std::string_view file = extract_filename(loc.file_name());
     try {
