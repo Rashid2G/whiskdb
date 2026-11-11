@@ -181,6 +181,80 @@ void test_invariants() {
     std::println("DB_ASSERT tests PASSED!");
 }
 
+void test_logger_ring_buffer_and_filtering() {
+    std::println("\n--- Testing Ring Buffer Retrieval & Level Filtering ---");
+
+    // 1. Level filtering test
+    Logger::set_level(LogLevel::Warn);
+    Logger::clear_recent_logs();
+    assert(Logger::get_recent_logs_count() == 0);
+    assert(Logger::get_recent_logs().empty());
+
+    // Messages below Warn should be filtered out and not enter the ring buffer
+    LOG_TRACE("Should be filtered (trace)");
+    LOG_DEBUG("Should be filtered (debug)");
+    LOG_INFO("Should be filtered (info)");
+    assert(Logger::get_recent_logs_count() == 0);
+
+    // Messages at or above Warn should be recorded
+    LOG_WARN("Allowed warning record");
+    LOG_ERROR("Allowed error record: code {}", 500);
+    LOG_FATAL("Allowed fatal alert");
+
+    auto logs = Logger::get_recent_logs();
+    assert(logs.size() == 3);
+    assert(logs[0].find("Allowed warning record") != std::string::npos);
+    assert(logs[1].find("Allowed error record: code 500") != std::string::npos);
+    assert(logs[2].find("Allowed fatal alert") != std::string::npos);
+
+    // 2. Circular buffer capacity and FIFO eviction test
+    Logger::set_level(LogLevel::Debug);
+    const idx_t original_cap = Logger::get_capacity();
+    constexpr idx_t test_cap = 5;
+    Logger::set_capacity(test_cap);
+    assert(Logger::get_capacity() == test_cap);
+    Logger::clear_recent_logs();
+    assert(Logger::get_recent_logs_count() == 0);
+
+    for (int i = 1; i <= 10; ++i) {
+        LOG_INFO("Ring buffer message sequence #{}", i);
+    }
+
+    assert(Logger::get_recent_logs_count() == test_cap);
+    auto recent = Logger::get_recent_logs(test_cap);
+    assert(recent.size() == test_cap);
+
+    // Evicted messages #1..#5; kept messages #6..#10
+    assert(recent[0].find("sequence #6") != std::string::npos);
+    assert(recent[1].find("sequence #7") != std::string::npos);
+    assert(recent[2].find("sequence #8") != std::string::npos);
+    assert(recent[3].find("sequence #9") != std::string::npos);
+    assert(recent[4].find("sequence #10") != std::string::npos);
+
+    // Partial retrieval: fetch only last 2
+    auto last_2 = Logger::get_recent_logs(2);
+    assert(last_2.size() == 2);
+    assert(last_2[0].find("sequence #9") != std::string::npos);
+    assert(last_2[1].find("sequence #10") != std::string::npos);
+
+    // Fetch more lines than capacity
+    auto all_from_large_query = Logger::get_recent_logs(100);
+    assert(all_from_large_query.size() == test_cap);
+
+    // Zero fetch
+    auto zero_logs = Logger::get_recent_logs(0);
+    assert(zero_logs.empty());
+
+    // Clear logs
+    Logger::clear_recent_logs();
+    assert(Logger::get_recent_logs_count() == 0);
+    assert(Logger::get_recent_logs().empty());
+
+    // Restore original capacity
+    Logger::set_capacity(original_cap);
+    std::println("Ring buffer retrieval & level filtering test PASSED!");
+}
+
 int main() {
     std::println("=========================================");
     std::println("Running WhiskDB Logger & Error Test Suite");
@@ -188,6 +262,7 @@ int main() {
 
     test_logger_levels();
     test_logger_file_output();
+    test_logger_ring_buffer_and_filtering();
     test_logger_performance_overhead();
     test_expected_errors();
     test_try_catch_wrapper();

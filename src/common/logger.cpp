@@ -7,17 +7,20 @@
 #include <fstream>
 #include <iostream>
 #include <mutex>
+#include <sstream>
+#include <thread>
 
 namespace database {
 
 namespace {
 
-/// Number of recent log lines kept in memory for the LOGS opcode
-constexpr idx_t LOG_RING_CAPACITY = 1024;
+/// Default capacity for recent log lines kept in memory for the LOGS opcode
+constexpr idx_t DEFAULT_RING_CAPACITY = 1000;
 
 std::mutex g_log_mutex;
 std::ofstream g_file_stream;
 std::deque<std::string> g_ring;
+std::atomic<idx_t> g_capacity{DEFAULT_RING_CAPACITY};
 
 constexpr const char* COLOR_RESET = "\033[0m";
 constexpr const char* COLOR_TRACE = "\033[90m";
@@ -40,7 +43,21 @@ const char* GetLevelColor(LogLevel level) noexcept {
     }
 }
 
+std::string GetCurrentThreadIdString() {
+    thread_local const std::string t_tid_str = []() {
+        std::ostringstream oss;
+        oss << std::this_thread::get_id();
+        return oss.str();
+    }();
+    return t_tid_str;
+}
+
 } // namespace
+
+Logger& Logger::Instance() noexcept {
+    static Logger instance;
+    return instance;
+}
 
 void Logger::SetLevel(LogLevel level) noexcept {
     min_level_.store(level, std::memory_order_relaxed);
@@ -52,6 +69,10 @@ LogLevel Logger::GetLevel() noexcept {
 
 void Logger::SetColorEnabled(bool enabled) noexcept {
     color_enabled_.store(enabled, std::memory_order_relaxed);
+}
+
+bool Logger::IsColorEnabled() noexcept {
+    return color_enabled_.load(std::memory_order_relaxed);
 }
 
 bool Logger::SetLogFile(const std::string& filepath) {
@@ -70,25 +91,48 @@ void Logger::CloseLogFile() noexcept {
     }
 }
 
+idx_t Logger::GetCapacity() noexcept {
+    return g_capacity.load(std::memory_order_relaxed);
+}
+
+void Logger::SetCapacity(idx_t capacity) noexcept {
+    g_capacity.store(capacity, std::memory_order_relaxed);
+    std::lock_guard<std::mutex> lock(g_log_mutex);
+    while (g_ring.size() > capacity) {
+        g_ring.pop_front();
+    }
+}
+
+void Logger::ClearRecentLogs() noexcept {
+    std::lock_guard<std::mutex> lock(g_log_mutex);
+    g_ring.clear();
+}
+
+idx_t Logger::GetRecentLogsCount() noexcept {
+    std::lock_guard<std::mutex> lock(g_log_mutex);
+    return static_cast<idx_t>(g_ring.size());
+}
+
 void Logger::WriteLog(LogLevel level,
                       std::string_view file,
                       int32_t line,
                       std::string_view message) {
     const auto now = std::chrono::system_clock::now();
-    const auto epoch_millis = std::chrono::duration_cast<std::chrono::milliseconds>(
+    const auto epoch_micros = std::chrono::duration_cast<std::chrono::microseconds>(
         now.time_since_epoch()).count();
-    const std::time_t sec = epoch_millis / 1000;
-    const int32_t ms = static_cast<int32_t>(epoch_millis % 1000);
+    const std::time_t sec = epoch_micros / 1000000;
+    const int32_t us = static_cast<int32_t>(epoch_micros % 1000000);
 
     struct tm tm_buf;
     localtime_r(&sec, &tm_buf);
 
-    char time_str[32];
-    std::snprintf(time_str, sizeof(time_str), "%04d-%02d-%02d %02d:%02d:%02d.%03d",
+    char time_str[36];
+    std::snprintf(time_str, sizeof(time_str), "%04d-%02d-%02d %02d:%02d:%02d.%06d",
                   tm_buf.tm_year + 1900, tm_buf.tm_mon + 1, tm_buf.tm_mday,
-                  tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec, ms);
+                  tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec, us);
 
     const std::string_view lvl_str = ToShortString(level);
+    const std::string tid_str = GetCurrentThreadIdString();
 
     std::lock_guard<std::mutex> lock(g_log_mutex);
 
@@ -97,28 +141,33 @@ void Logger::WriteLog(LogLevel level,
     if (color_enabled_.load(std::memory_order_relaxed)) {
         out << COLOR_TRACE << "[" << time_str << "] "
             << GetLevelColor(level) << "[" << lvl_str << "] "
-            << COLOR_LOC << "[" << file << ":" << line << "] "
+            << COLOR_LOC << "[tid:" << tid_str << "] "
+            << "[" << file << ":" << line << "] "
             << COLOR_RESET << message << "\n";
     } else {
-        out << "[" << time_str << "] [" << lvl_str << "] ["
-            << file << ":" << line << "] " << message << "\n";
+        out << "[" << time_str << "] [" << lvl_str << "] [tid:"
+            << tid_str << "] [" << file << ":" << line << "] " << message << "\n";
     }
 
     if (g_file_stream.is_open()) {
-        g_file_stream << "[" << time_str << "] [" << lvl_str << "] ["
-                      << file << ":" << line << "] " << message << "\n";
+        g_file_stream << "[" << time_str << "] [" << lvl_str << "] [tid:"
+                      << tid_str << "] [" << file << ":" << line << "] " << message << "\n";
     }
 
     // Keep the most recent lines in memory so clients can fetch them (whisk logs)
-    if (g_ring.size() >= LOG_RING_CAPACITY) {
-        g_ring.pop_front();
+    const idx_t cap = g_capacity.load(std::memory_order_relaxed);
+    if (cap > 0) {
+        while (g_ring.size() >= cap) {
+            g_ring.pop_front();
+        }
+        g_ring.push_back(std::format("[{}] [{}] [tid:{}] [{}:{}] {}",
+                                     time_str, lvl_str, tid_str, file, line, message));
     }
-    g_ring.push_back(std::format("[{}] [{}] [{}:{}] {}", time_str, lvl_str, file, line, message));
 }
 
 std::vector<std::string> Logger::GetRecentLogs(idx_t max_lines) {
     std::lock_guard<std::mutex> lock(g_log_mutex);
-    const idx_t count = std::min<idx_t>(max_lines, g_ring.size());
+    const idx_t count = std::min<idx_t>(max_lines, static_cast<idx_t>(g_ring.size()));
     return {g_ring.end() - static_cast<std::ptrdiff_t>(count), g_ring.end()};
 }
 
