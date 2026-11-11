@@ -1,9 +1,19 @@
 [config]
-data_directory = "./data"
-page_size = 4096
-ipv4 = "0.0.0.0"
+host = "0.0.0.0"
 port = 8080
-# strict | group_commit | relaxed | memory_only
+data_dir = "./data"
+page_size = 4096
+
+# Durability mode: strict | group_commit | relaxed | memory_only
 durability_mode = "group_commit"
-# snapshot + reset WAL after this many WAL records (0 = never)
+
+# Group commit batching interval in milliseconds
+wal_group_commit_ms = 10
+
+# Snapshot + reset WAL after this many WAL records (0 = never)
 checkpoint_wal_records = 100000
+
+# WebAssembly (WASM) execution limits
+wasm_max_fuel = 100000000
+wasm_max_memory_mb = 64
+
