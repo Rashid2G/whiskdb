@@ -20,6 +20,7 @@ constexpr idx_t DEFAULT_RING_CAPACITY = 1000;
 std::mutex g_log_mutex;
 std::ofstream g_file_stream;
 std::deque<std::string> g_ring;
+std::deque<LogRecord> g_records;
 std::atomic<idx_t> g_capacity{DEFAULT_RING_CAPACITY};
 
 constexpr const char* COLOR_RESET = "\033[0m";
@@ -100,12 +101,14 @@ void Logger::SetCapacity(idx_t capacity) noexcept {
     std::lock_guard<std::mutex> lock(g_log_mutex);
     while (g_ring.size() > capacity) {
         g_ring.pop_front();
+        g_records.pop_front();
     }
 }
 
 void Logger::ClearRecentLogs() noexcept {
     std::lock_guard<std::mutex> lock(g_log_mutex);
     g_ring.clear();
+    g_records.clear();
 }
 
 idx_t Logger::GetRecentLogsCount() noexcept {
@@ -159,9 +162,18 @@ void Logger::WriteLog(LogLevel level,
     if (cap > 0) {
         while (g_ring.size() >= cap) {
             g_ring.pop_front();
+            g_records.pop_front();
         }
         g_ring.push_back(std::format("[{}] [{}] [tid:{}] [{}:{}] {}",
                                      time_str, lvl_str, tid_str, file, line, message));
+        g_records.push_back(LogRecord{
+            .level = level,
+            .timestamp = std::string(time_str),
+            .thread_id = tid_str,
+            .file = std::string(file),
+            .line = line,
+            .message = std::string(message)
+        });
     }
 }
 
@@ -169,6 +181,12 @@ std::vector<std::string> Logger::GetRecentLogs(idx_t max_lines) {
     std::lock_guard<std::mutex> lock(g_log_mutex);
     const idx_t count = std::min<idx_t>(max_lines, static_cast<idx_t>(g_ring.size()));
     return {g_ring.end() - static_cast<std::ptrdiff_t>(count), g_ring.end()};
+}
+
+std::vector<LogRecord> Logger::GetRecentRecords(idx_t max_records) {
+    std::lock_guard<std::mutex> lock(g_log_mutex);
+    const idx_t count = std::min<idx_t>(max_records, static_cast<idx_t>(g_records.size()));
+    return {g_records.end() - static_cast<std::ptrdiff_t>(count), g_records.end()};
 }
 
 } // namespace database
