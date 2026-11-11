@@ -210,6 +210,18 @@ void test_logger_ring_buffer_and_filtering() {
     assert(logs[1].find("Allowed error record: code 500") != std::string::npos);
     assert(logs[2].find("Allowed fatal alert") != std::string::npos);
 
+    // Verify structured log records via singleton Instance()
+    auto records = Logger::Instance().GetRecentRecords(3);
+    assert(records.size() == 3);
+    assert(records[0].level == LogLevel::Warn);
+    assert(records[0].message == "Allowed warning record");
+    assert(records[1].level == LogLevel::Error);
+    assert(records[1].message == "Allowed error record: code 500");
+    assert(records[2].level == LogLevel::Fatal);
+    assert(!records[0].thread_id.empty());
+    assert(!records[0].timestamp.empty());
+    assert(records[0].ToString().find("Allowed warning record") != std::string::npos);
+
     // 2. Circular buffer capacity and FIFO eviction test
     Logger::set_level(LogLevel::Debug);
     const idx_t original_cap = Logger::get_capacity();

@@ -69,6 +69,23 @@ constexpr std::string_view extract_filename(std::string_view path) noexcept {
     return ExtractFilename(path);
 }
 
+/**
+ * @brief Structured record representing an emitted log event.
+ */
+struct LogRecord {
+    LogLevel level{LogLevel::Info};
+    std::string timestamp;
+    std::string thread_id;
+    std::string file;
+    int32_t line{0};
+    std::string message;
+
+    std::string ToString() const {
+        return std::format("[{}] [{}] [tid:{}] [{}:{}] {}",
+                           timestamp, ToShortString(level), thread_id, file, line, message);
+    }
+};
+
 class Logger {
 public:
     static Logger& Instance() noexcept;
@@ -101,6 +118,12 @@ public:
     static std::vector<std::string> GetRecentLogs(idx_t max_lines = 100);
     static std::vector<std::string> get_recent_logs(idx_t max_lines = 100) {
         return GetRecentLogs(max_lines);
+    }
+
+    /// Returns up to `max_records` of structured log records (oldest first), thread-safe.
+    static std::vector<LogRecord> GetRecentRecords(idx_t max_records = 100);
+    static std::vector<LogRecord> get_recent_records(idx_t max_records = 100) {
+        return GetRecentRecords(max_records);
     }
 
     /// Clears all entries from the in-memory circular ring buffer.
