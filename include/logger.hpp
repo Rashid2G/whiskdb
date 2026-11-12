@@ -69,8 +69,28 @@ constexpr std::string_view extract_filename(std::string_view path) noexcept {
     return ExtractFilename(path);
 }
 
+/**
+ * @brief Structured record representing an emitted log event.
+ */
+struct LogRecord {
+    LogLevel level{LogLevel::Info};
+    std::string timestamp;
+    std::string thread_id;
+    std::string file;
+    int32_t line{0};
+    std::string message;
+
+    std::string ToString() const {
+        return std::format("[{}] [{}] [tid:{}] [{}:{}] {}",
+                           timestamp, ToShortString(level), thread_id, file, line, message);
+    }
+};
+
 class Logger {
 public:
+    static Logger& Instance() noexcept;
+    static Logger& instance() noexcept { return Instance(); }
+
     static void SetLevel(LogLevel level) noexcept;
     static void set_level(LogLevel level) noexcept { SetLevel(level); }
 
@@ -85,6 +105,9 @@ public:
     static void SetColorEnabled(bool enabled) noexcept;
     static void set_color_enabled(bool enabled) noexcept { SetColorEnabled(enabled); }
 
+    static bool IsColorEnabled() noexcept;
+    static bool is_color_enabled() noexcept { return IsColorEnabled(); }
+
     static bool SetLogFile(const std::string& filepath);
     static bool set_log_file(const std::string& filepath) { return SetLogFile(filepath); }
 
@@ -93,6 +116,31 @@ public:
 
     /// Returns up to `max_lines` of the most recent log lines (oldest first), thread-safe.
     static std::vector<std::string> GetRecentLogs(idx_t max_lines = 100);
+    static std::vector<std::string> get_recent_logs(idx_t max_lines = 100) {
+        return GetRecentLogs(max_lines);
+    }
+
+    /// Returns up to `max_records` of structured log records (oldest first), thread-safe.
+    static std::vector<LogRecord> GetRecentRecords(idx_t max_records = 100);
+    static std::vector<LogRecord> get_recent_records(idx_t max_records = 100) {
+        return GetRecentRecords(max_records);
+    }
+
+    /// Clears all entries from the in-memory circular ring buffer.
+    static void ClearRecentLogs() noexcept;
+    static void clear_recent_logs() noexcept { ClearRecentLogs(); }
+
+    /// Returns the capacity of the in-memory circular ring buffer.
+    static idx_t GetCapacity() noexcept;
+    static idx_t get_capacity() noexcept { return GetCapacity(); }
+
+    /// Sets the maximum capacity of the in-memory circular ring buffer.
+    static void SetCapacity(idx_t capacity) noexcept;
+    static void set_capacity(idx_t capacity) noexcept { SetCapacity(capacity); }
+
+    /// Returns the current number of log lines in the ring buffer.
+    static idx_t GetRecentLogsCount() noexcept;
+    static idx_t get_recent_logs_count() noexcept { return GetRecentLogsCount(); }
 
     static void WriteLog(LogLevel level,
                          std::string_view file,
