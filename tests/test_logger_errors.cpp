@@ -6,6 +6,8 @@
 #include <filesystem>
 #include <fstream>
 #include <print>
+#include <sys/wait.h>
+#include <unistd.h>
 
 using namespace Database;
 
@@ -104,7 +106,12 @@ void test_expected_errors() {
     auto err_div = safe_divide(100, 0);
     assert(!err_div.has_value());
     assert(err_div.error().code() == ErrorCode::InvalidArgument);
+    assert(err_div.error().Code() == ErrorCode::InvalidArgument);
     assert(err_div.error().message() == "division by zero is undefined");
+    assert(err_div.error().Message() == "division by zero is undefined");
+    assert(!err_div.error().is_ok());
+    assert(!err_div.error().IsOk());
+    assert(static_cast<bool>(err_div.error()));
     std::println("Captured expected error: {}", err_div.error().to_string());
 
     // Result<void> test
@@ -120,6 +127,36 @@ void test_expected_errors() {
     assert(!large_key_res.has_value());
     assert(large_key_res.error().code() == ErrorCode::PayloadTooLarge);
     std::println("Captured formatted error: {}", large_key_res.error().to_string());
+
+    // Monadic operations on Result<T> (std::expected and_then, transform, or_else)
+    auto chained_res = safe_divide(100, 2)
+        .and_then([](int val) -> Result<int> {
+            return safe_divide(val, 2);
+        })
+        .transform([](int val) {
+            return val * 10;
+        });
+    assert(chained_res.has_value());
+    assert(*chained_res == 250);
+
+    // Monadic short-circuiting on error
+    bool step_executed = false;
+    auto fail_chained = safe_divide(100, 0)
+        .and_then([&step_executed](int val) -> Result<int> {
+            step_executed = true;
+            return safe_divide(val, 2);
+        });
+    assert(!fail_chained.has_value());
+    assert(!step_executed);
+    assert(fail_chained.error().code() == ErrorCode::InvalidArgument);
+
+    // ErrorCode string conversion and std::format verification
+    assert(ToString(ErrorCode::Ok) == "Ok");
+    assert(to_string(ErrorCode::Internal) == "Internal");
+    assert(ToString(ErrorCode::TableDoesNotExist) == "TableDoesNotExist");
+    assert(ToString(ErrorCode::WasmTrap) == "WasmTrap");
+    assert(std::format("{}", ErrorCode::PayloadTooLarge) == "PayloadTooLarge");
+    assert(std::format("{}", err_div.error()).find("InvalidArgument") != std::string::npos);
 
     std::println("Result<T> error tests PASSED!");
 }
@@ -146,12 +183,14 @@ void test_fatal_exceptions() {
     std::println("\n--- Testing Fatal Exceptions ---");
     bool caught_database_exc = false;
     bool caught_corruption_exc = false;
+    bool caught_fatal_exc = false;
 
     try {
         throw DatabaseException(ErrorCode::IoError, "Unable to sync page table to disk");
     } catch (const DatabaseException& e) {
         caught_database_exc = true;
         assert(e.code() == ErrorCode::IoError);
+        assert(e.Code() == ErrorCode::IoError);
     }
     assert(caught_database_exc);
 
@@ -160,25 +199,65 @@ void test_fatal_exceptions() {
     } catch (const CorruptionError& e) {
         caught_corruption_exc = true;
         assert(e.code() == ErrorCode::CorruptedData);
+        assert(e.Code() == ErrorCode::CorruptedData);
     }
     assert(caught_corruption_exc);
 
-    // Test top-level handler
+    // Verify FatalError polymorphic catching via base DatabaseException
+    try {
+        throw FatalError(ErrorCode::OutOfMemory, "Failed to allocate 1GB buffer pool segment");
+    } catch (const DatabaseException& e) {
+        caught_fatal_exc = true;
+        assert(e.code() == ErrorCode::OutOfMemory);
+    }
+    assert(caught_fatal_exc);
+
+    // Test top-level handler with active exception
     try {
         throw FatalError(ErrorCode::OutOfMemory, "Failed to allocate 1GB buffer pool segment");
     } catch (...) {
         handle_top_level_exception();
     }
 
+    // Test top-level handler without active exception (boundary branch)
+    handle_top_level_exception();
+
     std::println("Fatal exception tests PASSED!");
 }
 
 void test_invariants() {
-    std::println("\n--- Testing Invariants (DB_ASSERT) ---");
+    std::println("\n--- Testing Invariants (D_ASSERT) ---");
     int buffer_size = 4096;
+    // Explanatory comment: buffer size must be strictly positive
+    D_ASSERT(buffer_size > 0);
+    // Explanatory comment: buffer size must match standard 4KB page size
+    D_ASSERT_MSG(buffer_size == 4096, "Buffer size must match page size");
     DB_ASSERT(buffer_size > 0);
     DB_ASSERT_MSG(buffer_size == 4096, "Buffer size must match page size");
-    std::println("DB_ASSERT tests PASSED!");
+
+    // In debug builds, verify D_ASSERT aborts on failure using fork
+#ifndef NDEBUG
+    pid_t pid = fork();
+    assert(pid >= 0);
+    if (pid == 0) {
+        // Child process: intentionally trigger D_ASSERT to verify abort
+        // Redirect stderr to /dev/null to keep test output clean
+        if (freopen("/dev/null", "w", stderr) == nullptr) {
+            // ignore freopen error in child
+        }
+        // Explanatory comment: testing assertion abort behavior
+        D_ASSERT(1 == 2);
+        std::exit(0);
+    } else {
+        int status = 0;
+        waitpid(pid, &status, 0);
+        // Verify child terminated by signal (SIGABRT)
+        assert(WIFSIGNALED(status));
+        assert(WTERMSIG(status) == SIGABRT);
+    }
+#endif
+
+    std::println("D_ASSERT tests PASSED!");
 }
 
 int main() {
