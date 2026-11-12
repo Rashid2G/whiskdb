@@ -97,14 +97,24 @@ endforeach()
 # Tests (tests/test_*.cpp -> one executable + one ctest entry per file)
 # ---------------------------------------------------------------------------
 enable_testing()
+
+function(add_whisk_test test_name test_src)
+  if(NOT TARGET ${test_name})
+    add_executable(${test_name} ${test_src})
+    target_link_libraries(${test_name} PRIVATE whiskdb_core)
+    target_include_directories(${test_name} PRIVATE ${CMAKE_SOURCE_DIR}/tests)
+    target_compile_options(${test_name} PRIVATE -UNDEBUG)
+    add_test(NAME ${test_name} COMMAND ${test_name} WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+  endif()
+endfunction()
+
+# Explicitly register core test suites via add_whisk_test
+add_whisk_test(test_config tests/test_config.cpp)
+
 file(GLOB WHISKDB_TESTS CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tests/test_*.cpp)
 foreach(test_src ${WHISKDB_TESTS})
   get_filename_component(test_name ${test_src} NAME_WE)
-  add_executable(${test_name} ${test_src})
-  target_link_libraries(${test_name} PRIVATE whiskdb_core)
-  target_include_directories(${test_name} PRIVATE ${CMAKE_SOURCE_DIR}/tests)
-  target_compile_options(${test_name} PRIVATE -UNDEBUG)
-  add_test(NAME ${test_name} COMMAND ${test_name} WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+  add_whisk_test(${test_name} ${test_src})
 endforeach()
 
 # Convenient custom target to execute tests: `cmake --build <dir> --target run-tests`
