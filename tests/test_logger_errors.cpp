@@ -1,13 +1,16 @@
 #include "errors.hpp"
 #include "logger.hpp"
 
+#include <atomic>
 #include <cassert>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <print>
 #include <sys/wait.h>
+#include <thread>
 #include <unistd.h>
+#include <vector>
 
 using namespace Database;
 
@@ -260,6 +263,179 @@ void test_invariants() {
     std::println("D_ASSERT tests PASSED!");
 }
 
+void test_logger_ring_buffer_and_filtering() {
+    std::println("\n--- Testing Ring Buffer Retrieval & Level Filtering ---");
+
+    // 1. Level filtering test
+    Logger::set_level(LogLevel::Warn);
+    Logger::clear_recent_logs();
+    assert(Logger::get_recent_logs_count() == 0);
+    assert(Logger::get_recent_logs().empty());
+
+    // Messages below Warn should be filtered out and not enter the ring buffer
+    LOG_TRACE("Should be filtered (trace)");
+    LOG_DEBUG("Should be filtered (debug)");
+    LOG_INFO("Should be filtered (info)");
+    assert(Logger::get_recent_logs_count() == 0);
+
+    // Messages at or above Warn should be recorded
+    LOG_WARN("Allowed warning record");
+    LOG_ERROR("Allowed error record: code {}", 500);
+    LOG_FATAL("Allowed fatal alert");
+
+    auto logs = Logger::get_recent_logs();
+    assert(logs.size() == 3);
+    assert(logs[0].find("Allowed warning record") != std::string::npos);
+    assert(logs[1].find("Allowed error record: code 500") != std::string::npos);
+    assert(logs[2].find("Allowed fatal alert") != std::string::npos);
+
+    // Verify structured log records via singleton Instance()
+    auto records = Logger::Instance().GetRecentRecords(3);
+    assert(records.size() == 3);
+    assert(records[0].level == LogLevel::Warn);
+    assert(records[0].message == "Allowed warning record");
+    assert(records[1].level == LogLevel::Error);
+    assert(records[1].message == "Allowed error record: code 500");
+    assert(records[2].level == LogLevel::Fatal);
+    assert(!records[0].thread_id.empty());
+    assert(!records[0].timestamp.empty());
+    assert(records[0].ToString().find("Allowed warning record") != std::string::npos);
+
+    // 2. Circular buffer capacity and FIFO eviction test
+    Logger::set_level(LogLevel::Debug);
+    const idx_t original_cap = Logger::get_capacity();
+    constexpr idx_t test_cap = 5;
+    Logger::set_capacity(test_cap);
+    assert(Logger::get_capacity() == test_cap);
+    Logger::clear_recent_logs();
+    assert(Logger::get_recent_logs_count() == 0);
+
+    for (int i = 1; i <= 10; ++i) {
+        LOG_INFO("Ring buffer message sequence #{}", i);
+    }
+
+    assert(Logger::get_recent_logs_count() == test_cap);
+    auto recent = Logger::get_recent_logs(test_cap);
+    assert(recent.size() == test_cap);
+
+    // Evicted messages #1..#5; kept messages #6..#10
+    assert(recent[0].find("sequence #6") != std::string::npos);
+    assert(recent[1].find("sequence #7") != std::string::npos);
+    assert(recent[2].find("sequence #8") != std::string::npos);
+    assert(recent[3].find("sequence #9") != std::string::npos);
+    assert(recent[4].find("sequence #10") != std::string::npos);
+
+    // Partial retrieval: fetch only last 2
+    auto last_2 = Logger::get_recent_logs(2);
+    assert(last_2.size() == 2);
+    assert(last_2[0].find("sequence #9") != std::string::npos);
+    assert(last_2[1].find("sequence #10") != std::string::npos);
+
+    // Fetch more lines than capacity
+    auto all_from_large_query = Logger::get_recent_logs(100);
+    assert(all_from_large_query.size() == test_cap);
+
+    // Zero fetch
+    auto zero_logs = Logger::get_recent_logs(0);
+    assert(zero_logs.empty());
+
+    // Clear logs
+    Logger::clear_recent_logs();
+    assert(Logger::get_recent_logs_count() == 0);
+    assert(Logger::get_recent_logs().empty());
+
+    // Restore original capacity
+    Logger::set_capacity(original_cap);
+    std::println("Ring buffer retrieval & level filtering test PASSED!");
+}
+
+void test_logger_concurrent_multithreaded() {
+    std::println("\n--- Testing 8-Thread Concurrent Logging & Ring Buffer Queries ---");
+
+    Logger::set_level(LogLevel::Debug);
+    Logger::clear_recent_logs();
+    const idx_t original_cap = Logger::get_capacity();
+    constexpr idx_t test_cap = 500;
+    Logger::set_capacity(test_cap);
+
+    constexpr int kNumThreads = 8;
+    constexpr int kMessagesPerThread = 500;
+    std::atomic<bool> start_signal{false};
+    std::atomic<bool> writers_done{false};
+    std::atomic<uint64_t> total_queries{0};
+    std::vector<std::thread> threads;
+    threads.reserve(kNumThreads + 1);
+
+    // Launch 8 logging threads
+    for (int t = 0; t < kNumThreads; ++t) {
+        threads.emplace_back([t, &start_signal]() {
+            while (!start_signal.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+            for (int i = 0; i < kMessagesPerThread; ++i) {
+                switch (i % 4) {
+                    case 0:
+                        LOG_DEBUG("Worker thread {} iteration {} payload {}", t, i, "debug_val");
+                        break;
+                    case 1:
+                        LOG_INFO("Worker thread {} iteration {} metric {}", t, i, 42.5);
+                        break;
+                    case 2:
+                        LOG_WARN("Worker thread {} iteration {} warning event", t, i);
+                        break;
+                    case 3:
+                        LOG_ERROR("Worker thread {} iteration {} error code {}", t, i, 9000 + i);
+                        break;
+                }
+            }
+        });
+    }
+
+    // Launch concurrent query thread querying the ring buffer in parallel
+    threads.emplace_back([&start_signal, &writers_done, &total_queries]() {
+        while (!start_signal.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
+        while (!writers_done.load(std::memory_order_acquire)) {
+            auto logs = Logger::get_recent_logs(25);
+            assert(logs.size() <= 25);
+            total_queries.fetch_add(1, std::memory_order_relaxed);
+            std::this_thread::yield();
+        }
+    });
+
+    // Fire start signal to release all threads simultaneously
+    start_signal.store(true, std::memory_order_release);
+
+    // Join all 8 writer threads
+    for (int t = 0; t < kNumThreads; ++t) {
+        threads[t].join();
+    }
+    writers_done.store(true, std::memory_order_release);
+
+    // Join reader thread
+    threads.back().join();
+
+    // Verify ring buffer state after 4,000 concurrent logs
+    assert(Logger::get_recent_logs_count() == test_cap);
+    auto all_recent = Logger::get_recent_logs(test_cap);
+    assert(all_recent.size() == test_cap);
+
+    // Verify all records are non-empty and well-formed
+    for (const auto& log_line : all_recent) {
+        assert(!log_line.empty());
+        assert(log_line.find("[tid:") != std::string::npos);
+        assert(log_line.find("Worker thread") != std::string::npos);
+    }
+
+    // Restore configuration
+    Logger::clear_recent_logs();
+    Logger::set_capacity(original_cap);
+
+    std::println("8-thread concurrent logging PASSED! (executed {} concurrent queries)",
+                 total_queries.load());
+}
+
 int main() {
     std::println("=========================================");
     std::println("Running WhiskDB Logger & Error Test Suite");
@@ -267,6 +443,8 @@ int main() {
 
     test_logger_levels();
     test_logger_file_output();
+    test_logger_ring_buffer_and_filtering();
+    test_logger_concurrent_multithreaded();
     test_logger_performance_overhead();
     test_expected_errors();
     test_try_catch_wrapper();
