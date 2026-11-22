@@ -25,7 +25,8 @@ uint64_t NowMicros() {
 }
 
 bool IsKnownType(WalRecordType type) {
-    return type == WalRecordType::SqlStatement || type == WalRecordType::Checkpoint;
+    return type == WalRecordType::SqlStatement || type == WalRecordType::Checkpoint ||
+           type == WalRecordType::SqlBatch;
 }
 
 } // namespace

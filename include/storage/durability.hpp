@@ -26,7 +26,7 @@ Result<DurabilityMode> ParseDurabilityMode(std::string_view s);
 std::string_view ToString(DurabilityMode m);
 
 /// Type tag of a WAL record, serialized as one byte on disk.
-enum class WalRecordType : uint8_t { SqlStatement = 1, Checkpoint = 2 };
+enum class WalRecordType : uint8_t { SqlStatement = 1, Checkpoint = 2, SqlBatch = 3 };
 
 } // namespace database
 
