@@ -1,6 +1,7 @@
 #include "engine.hpp"
 
 #include "logger.hpp"
+#include "sql/catalog.hpp"
 #include "sql/transaction_guard.hpp"
 #include "sql/value_codec.hpp"
 #include "storage/snapshot_manager.hpp"
@@ -113,6 +114,11 @@ Result<void> Engine::Recover() {
     }
     sql_ = std::move(*sql);
 
+    auto cat_init = SystemCatalog::Initialize(*sql_);
+    if (!cat_init) {
+        return std::unexpected(cat_init.error());
+    }
+
     lsn_t next_lsn = 1;
     const bool durable = options_.durability != DurabilityMode::MemoryOnly;
 
@@ -131,6 +137,10 @@ Result<void> Engine::Recover() {
             if (!loaded) {
                 return std::unexpected(loaded.error());
             }
+            auto init_snap = SystemCatalog::Initialize(*sql_);
+            if (!init_snap) {
+                return std::unexpected(init_snap.error());
+            }
             recovery_.snapshot_loaded = true;
             recovery_.snapshot_lsn = snapshot->lsn;
             next_lsn = snapshot->lsn + 1;
@@ -139,6 +149,7 @@ Result<void> Engine::Recover() {
         }
 
         // 2. Replay committed statements newer than the snapshot
+        auto catalog_guard = sql_->AcquireCatalogWriteGuard();
         auto replay = ReplayWal(
             WalPath(), recovery_.snapshot_lsn,
             [this](lsn_t lsn, WalRecordType type, std::span<const uint8_t> payload) -> Result<void> {

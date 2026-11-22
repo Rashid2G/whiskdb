@@ -8,6 +8,7 @@
 
 #include <sqlite3.h>
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <span>
@@ -28,6 +29,41 @@ public:
         explicit PrivateTag() = default;
     };
 
+    class CatalogWriteGuard {
+    public:
+        CatalogWriteGuard() noexcept = default;
+        explicit CatalogWriteGuard(SqlEngine* engine) noexcept : engine_(engine) {
+            if (engine_ != nullptr) {
+                engine_->internal_catalog_depth_.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
+        ~CatalogWriteGuard() {
+            if (engine_ != nullptr) {
+                engine_->internal_catalog_depth_.fetch_sub(1, std::memory_order_release);
+            }
+        }
+
+        CatalogWriteGuard(const CatalogWriteGuard&) = delete;
+        CatalogWriteGuard& operator=(const CatalogWriteGuard&) = delete;
+
+        CatalogWriteGuard(CatalogWriteGuard&& other) noexcept : engine_(other.engine_) {
+            other.engine_ = nullptr;
+        }
+        CatalogWriteGuard& operator=(CatalogWriteGuard&& other) noexcept {
+            if (this != &other) {
+                if (engine_ != nullptr) {
+                    engine_->internal_catalog_depth_.fetch_sub(1, std::memory_order_release);
+                }
+                engine_ = other.engine_;
+                other.engine_ = nullptr;
+            }
+            return *this;
+        }
+
+    private:
+        SqlEngine* engine_{nullptr};
+    };
+
 public:
     static Result<std::unique_ptr<SqlEngine>> Open(idx_t cache_capacity = 128);
     explicit SqlEngine(PrivateTag, sqlite3* db, idx_t cache_capacity);
@@ -39,6 +75,8 @@ public:
     SqlEngine& operator=(SqlEngine&&) = delete;
 
 public:
+    [[nodiscard]] CatalogWriteGuard AcquireCatalogWriteGuard();
+
     // Execute exactly ONE statement (error ErrorCode::InvalidArgument if trailing non-whitespace statements).
     // Uses the prepared-statement cache. Binds params positionally (?1..).
     // Fills QueryResult incl. columns, typed rows, rows_affected, last_insert_rowid, exec_us (steady_clock, microseconds), is_mutation (= !sqlite3_stmt_readonly(stmt), so true for DDL/DML).
@@ -56,10 +94,15 @@ public:
 private:
     Error MakeSqliteError(int rc, std::string_view override_msg = {}) const;
 
+    static int AuthorizerCallback(void* user_data, int action_code, const char* arg1,
+                                  const char* arg2, const char* db_name,
+                                  const char* trigger_or_view);
+
 private:
     mutable std::mutex mutex_;
     sqlite3* db_{nullptr};
     std::unique_ptr<StatementCache> statement_cache_;
+    std::atomic<int> internal_catalog_depth_{0};
 };
 
 } // namespace database
