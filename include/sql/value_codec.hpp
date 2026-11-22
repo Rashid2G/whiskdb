@@ -39,6 +39,16 @@ struct DecodedStatement {
 Result<DecodedStatement> DecodeStatement(std::span<const uint8_t> in);
 
 /**
+ * @brief Encodes a batch of statements (used for atomic SqlBatch WAL records).
+ */
+void EncodeStatementBatch(std::vector<uint8_t>& out, std::span<const DecodedStatement> statements);
+
+/**
+ * @brief Decodes a statement batch; bounds-checked and rejects trailing garbage.
+ */
+Result<std::vector<DecodedStatement>> DecodeStatementBatch(std::span<const uint8_t> in);
+
+/**
  * @brief Encodes a QueryResult into out buffer.
  */
 void EncodeQueryResult(std::vector<uint8_t>& out, const QueryResult& r);

@@ -36,6 +36,20 @@ uint64_t ReadU64LE(const uint8_t* p) {
     return val;
 }
 
+void WriteU32BE(std::vector<uint8_t>& out, uint32_t val) {
+    out.push_back(static_cast<uint8_t>((val >> 24) & 0xFF));
+    out.push_back(static_cast<uint8_t>((val >> 16) & 0xFF));
+    out.push_back(static_cast<uint8_t>((val >> 8) & 0xFF));
+    out.push_back(static_cast<uint8_t>(val & 0xFF));
+}
+
+uint32_t ReadU32BE(const uint8_t* p) {
+    return (static_cast<uint32_t>(p[0]) << 24) |
+           (static_cast<uint32_t>(p[1]) << 16) |
+           (static_cast<uint32_t>(p[2]) << 8) |
+           static_cast<uint32_t>(p[3]);
+}
+
 } // namespace
 
 void EncodeValue(std::vector<uint8_t>& out, const Value& v) {
@@ -200,6 +214,62 @@ Result<DecodedStatement> DecodeStatement(std::span<const uint8_t> in) {
         .sql = std::move(sql),
         .params = std::move(params)
     };
+}
+
+void EncodeStatementBatch(std::vector<uint8_t>& out, std::span<const DecodedStatement> statements) {
+    WriteU32BE(out, static_cast<uint32_t>(statements.size()));
+    for (const auto& stmt : statements) {
+        size_t len_offset = out.size();
+        out.resize(out.size() + 4);
+        size_t stmt_start = out.size();
+        EncodeStatement(out, stmt.sql, stmt.params);
+        uint32_t stmt_len = static_cast<uint32_t>(out.size() - stmt_start);
+        out[len_offset] = static_cast<uint8_t>((stmt_len >> 24) & 0xFF);
+        out[len_offset + 1] = static_cast<uint8_t>((stmt_len >> 16) & 0xFF);
+        out[len_offset + 2] = static_cast<uint8_t>((stmt_len >> 8) & 0xFF);
+        out[len_offset + 3] = static_cast<uint8_t>(stmt_len & 0xFF);
+    }
+}
+
+Result<std::vector<DecodedStatement>> DecodeStatementBatch(std::span<const uint8_t> in) {
+    if (in.size() < 4) {
+        return MakeError(ErrorCode::ProtocolError, "Truncated statement batch buffer");
+    }
+
+    uint32_t count = ReadU32BE(in.data());
+    in = in.subspan(4);
+
+    if (count > in.size() / 4) {
+        return MakeError(ErrorCode::ProtocolError, "Batch statement count exceeds remaining buffer bytes");
+    }
+
+    std::vector<DecodedStatement> statements;
+    statements.reserve(count);
+
+    for (uint32_t i = 0; i < count; ++i) {
+        if (in.size() < 4) {
+            return MakeError(ErrorCode::ProtocolError, "Truncated batch statement length");
+        }
+        uint32_t stmt_len = ReadU32BE(in.data());
+        in = in.subspan(4);
+
+        if (stmt_len > in.size()) {
+            return MakeError(ErrorCode::ProtocolError, "Statement length exceeds remaining buffer");
+        }
+
+        auto stmt_res = DecodeStatement(in.subspan(0, stmt_len));
+        if (!stmt_res) {
+            return MakeError(stmt_res.error().Code(), stmt_res.error().Message());
+        }
+        statements.push_back(std::move(*stmt_res));
+        in = in.subspan(stmt_len);
+    }
+
+    if (!in.empty()) {
+        return MakeError(ErrorCode::ProtocolError, "Trailing garbage in statement batch");
+    }
+
+    return statements;
 }
 
 void EncodeQueryResult(std::vector<uint8_t>& out, const QueryResult& r) {

@@ -1,8 +1,14 @@
 #include "client/table_format.hpp"
 #include "client/whisk_client.hpp"
+#include "config.hpp"
 #include "engine.hpp"
 #include "errors.hpp"
 #include "logger.hpp"
+#include "network/protocol.hpp"
+#include "network/server.hpp"
+#include "network/tcp_client.hpp"
+#include "sql/value_codec.hpp"
+#include "storage/wal_manager.hpp"
 
 #include <cassert>
 #include <filesystem>
@@ -261,6 +267,160 @@ void TestCliBinaryEndToEnd() {
     std::filesystem::remove_all(temp_dir, ec);
 }
 
+void TestEngineOptionsFromConfig() {
+    std::println("--- Testing EngineOptions::FromConfig Wiring ---");
+    // Default config
+    {
+        Config cfg;
+        auto opts = EngineOptions::FromConfig(cfg);
+        assert(opts.has_value());
+        assert(opts->wal_group_commit_ms == 10);
+        assert(opts->wasm_max_fuel == 100'000'000);
+        assert(opts->wasm_max_memory_mb == 64);
+    }
+    // Custom config
+    {
+        std::string toml = R"(
+            data_dir = "/tmp/whisk_custom"
+            host = "0.0.0.0"
+            port = 9090
+            durability_mode = "relaxed"
+            checkpoint_wal_records = 50000
+            wal_group_commit_ms = 25
+            wasm_max_fuel = 50000000
+            wasm_max_memory_mb = 128
+        )";
+        Config cfg = Config::FromString(toml);
+        assert(cfg.IsValid());
+        auto opts = EngineOptions::FromConfig(cfg);
+        assert(opts.has_value());
+        assert(opts->data_dir == "/tmp/whisk_custom");
+        assert(opts->host == "0.0.0.0");
+        assert(opts->port == 9090);
+        assert(opts->durability == DurabilityMode::Relaxed);
+        assert(opts->checkpoint_wal_records == 50000);
+        assert(opts->wal_group_commit_ms == 25);
+        assert(opts->wasm_max_fuel == 50000000);
+        assert(opts->wasm_max_memory_mb == 128);
+    }
+}
+
+void TestServerForwardsWasmOpcodes() {
+    std::println("--- Testing Server Forwards WASM Opcodes (WhiskPublish, WhiskCall, WhiskList) ---");
+    std::vector<Opcode> received_opcodes;
+    Server server("127.0.0.1", 0, [&received_opcodes](const Request& req) -> Response {
+        received_opcodes.push_back(req.opcode);
+        Response resp;
+        resp.status = ErrorCode::Ok;
+        std::string msg = "handler_invoked";
+        resp.payload.assign(msg.begin(), msg.end());
+        return resp;
+    });
+    assert(server.Start().has_value());
+    const uint16_t port = server.Port();
+
+    TcpClient client;
+    assert(client.Connect("127.0.0.1", port).has_value());
+
+    for (auto op : {Opcode::WhiskPublish, Opcode::WhiskCall, Opcode::WhiskList}) {
+        Request req;
+        req.opcode = op;
+        req.payload = {1, 2, 3};
+        auto resp_res = client.Send(req);
+        assert(resp_res.has_value());
+        assert(resp_res->status == ErrorCode::Ok);
+        std::string payload_str(resp_res->payload.begin(), resp_res->payload.end());
+        assert(payload_str == "handler_invoked");
+    }
+
+    assert(received_opcodes.size() == 3);
+    assert(received_opcodes[0] == Opcode::WhiskPublish);
+    assert(received_opcodes[1] == Opcode::WhiskCall);
+    assert(received_opcodes[2] == Opcode::WhiskList);
+
+    client.Close();
+    server.Stop();
+}
+
+void TestEngineRecoverSqlBatchAtomic() {
+    std::println("--- Testing Engine::Recover() SqlBatch Atomic Replay & Rollback ---");
+    auto temp_dir = MakeTempDir("batch_atomic");
+
+    // Phase 1: Append a valid batch to WAL manually, then Open Engine
+    {
+        WalOptions wal_opts;
+        wal_opts.path = temp_dir / "whiskdb.wal";
+        wal_opts.mode = DurabilityMode::Strict;
+        auto wal_res = WalManager::Open(wal_opts, 1);
+        assert(wal_res.has_value());
+        auto& wal = *wal_res.value();
+
+        std::vector<DecodedStatement> batch = {
+            {"CREATE TABLE batch_tab (id INTEGER PRIMARY KEY, v TEXT)", {}},
+            {"INSERT INTO batch_tab VALUES (?1, ?2)", {int64_t(1), std::string("first")}},
+            {"INSERT INTO batch_tab VALUES (?1, ?2)", {int64_t(2), std::string("second")}}
+        };
+        std::vector<uint8_t> payload;
+        EncodeStatementBatch(payload, batch);
+
+        auto app = wal.Append(WalRecordType::SqlBatch, payload);
+        assert(app.has_value() && *app == 1);
+    }
+
+    // Recover via Engine::Open
+    {
+        EngineOptions opts;
+        opts.data_dir = temp_dir;
+        opts.durability = DurabilityMode::Strict;
+        auto eng_res = Engine::Open(opts);
+        assert(eng_res.has_value());
+        auto& engine = *eng_res.value();
+
+        assert(engine.Recovery().wal_records_replayed == 1);
+        auto sel = engine.ExecuteSql("SELECT id, v FROM batch_tab ORDER BY id");
+        assert(sel.has_value());
+        assert(sel->rows.size() == 2);
+        assert(std::get<int64_t>(sel->rows[0][0]) == 1);
+        assert(std::get<std::string>(sel->rows[0][1]) == "first");
+        assert(std::get<int64_t>(sel->rows[1][0]) == 2);
+        assert(std::get<std::string>(sel->rows[1][1]) == "second");
+    }
+
+    // Phase 2: Append a failing mid-batch record to the WAL
+    {
+        WalOptions wal_opts;
+        wal_opts.path = temp_dir / "whiskdb.wal";
+        wal_opts.mode = DurabilityMode::Strict;
+        auto wal_res = WalManager::Open(wal_opts, 2);
+        assert(wal_res.has_value());
+        auto& wal = *wal_res.value();
+
+        std::vector<DecodedStatement> failing_batch = {
+            {"INSERT INTO batch_tab VALUES (?1, ?2)", {int64_t(3), std::string("third")}},
+            {"INSERT INTO batch_tab VALUES (?1, ?2)", {int64_t(1), std::string("duplicate_key")}}, // will fail!
+            {"INSERT INTO batch_tab VALUES (?1, ?2)", {int64_t(4), std::string("fourth")}}
+        };
+        std::vector<uint8_t> payload;
+        EncodeStatementBatch(payload, failing_batch);
+
+        auto app = wal.Append(WalRecordType::SqlBatch, payload);
+        assert(app.has_value() && *app == 2);
+    }
+
+    // Engine::Open should fail with CorruptedData
+    {
+        EngineOptions opts;
+        opts.data_dir = temp_dir;
+        opts.durability = DurabilityMode::Strict;
+        auto eng_res = Engine::Open(opts);
+        assert(!eng_res.has_value());
+        assert(eng_res.error().Code() == ErrorCode::CorruptedData);
+    }
+
+    std::error_code ec;
+    std::filesystem::remove_all(temp_dir, ec);
+}
+
 } // namespace
 
 int main() {
@@ -273,6 +433,9 @@ int main() {
     TestWalRecoveryAndSnapshotOverTcp();
     TestConcurrentClientsDurable();
     TestCliBinaryEndToEnd();
+    TestEngineOptionsFromConfig();
+    TestServerForwardsWasmOpcodes();
+    TestEngineRecoverSqlBatchAtomic();
 
     std::println("=========================================");
     std::println("ALL E2E MVP TESTS PASSED!");

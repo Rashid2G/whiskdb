@@ -2,6 +2,7 @@
 
 #include "logger.hpp"
 #include "sql/catalog.hpp"
+#include "sql/transaction_guard.hpp"
 #include "sql/value_codec.hpp"
 #include "storage/snapshot_manager.hpp"
 #include "storage/wal_reader.hpp"
@@ -9,6 +10,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <optional>
 
 namespace database {
 
@@ -36,6 +38,21 @@ bool IsTransactionControl(std::string_view sql) {
            keyword == "SAVEPOINT" || keyword == "RELEASE";
 }
 
+bool IsReadOnlyQuery(std::string_view sql) {
+    idx_t pos = 0;
+    while (pos < sql.size() && std::isspace(static_cast<unsigned char>(sql[pos]))) {
+        pos++;
+    }
+    idx_t end = pos;
+    while (end < sql.size() && std::isalpha(static_cast<unsigned char>(sql[end]))) {
+        end++;
+    }
+    std::string keyword(sql.substr(pos, end - pos));
+    std::transform(keyword.begin(), keyword.end(), keyword.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+    return keyword == "SELECT" || keyword == "EXPLAIN" || keyword == "PRAGMA";
+}
+
 std::vector<uint8_t> ToBytes(std::string_view text) {
     return {text.begin(), text.end()};
 }
@@ -56,6 +73,9 @@ Result<EngineOptions> EngineOptions::FromConfig(const Config& config) {
     options.host = config.Host();
     options.port = config.Port();
     options.checkpoint_wal_records = config.CheckpointWalRecords();
+    options.wal_group_commit_ms = config.WalGroupCommitMs();
+    options.wasm_max_fuel = config.WasmMaxFuel();
+    options.wasm_max_memory_mb = config.WasmMaxMemoryMb();
     auto mode = ParseDurabilityMode(config.DurabilityModeName());
     if (!mode) {
         return std::unexpected(mode.error());
@@ -133,17 +153,45 @@ Result<void> Engine::Recover() {
         auto replay = ReplayWal(
             WalPath(), recovery_.snapshot_lsn,
             [this](lsn_t lsn, WalRecordType type, std::span<const uint8_t> payload) -> Result<void> {
-                if (type != WalRecordType::SqlStatement) {
+                if (type == WalRecordType::Checkpoint) {
                     return {};
                 }
-                auto statement = DecodeStatement(payload);
-                if (!statement) {
-                    return std::unexpected(statement.error());
+                if (type == WalRecordType::SqlStatement) {
+                    auto statement = DecodeStatement(payload);
+                    if (!statement) {
+                        return std::unexpected(statement.error());
+                    }
+                    auto executed = sql_->Execute(statement->sql, statement->params);
+                    if (!executed) {
+                        return MAKE_ERROR(ErrorCode::CorruptedData, "WAL replay failed at LSN {}: {}", lsn,
+                                          executed.error().Message());
+                    }
+                    return {};
                 }
-                auto executed = sql_->Execute(statement->sql, statement->params);
-                if (!executed) {
-                    return MAKE_ERROR(ErrorCode::CorruptedData, "WAL replay failed at LSN {}: {}", lsn,
-                                      executed.error().Message());
+                if (type == WalRecordType::SqlBatch) {
+                    auto batch = DecodeStatementBatch(payload);
+                    if (!batch) {
+                        return MAKE_ERROR(ErrorCode::CorruptedData, "WAL batch decode failed at LSN {}: {}", lsn,
+                                          batch.error().Message());
+                    }
+                    auto guard = TransactionGuard::Begin(*sql_);
+                    if (!guard) {
+                        return MAKE_ERROR(ErrorCode::CorruptedData, "WAL batch transaction begin failed at LSN {}: {}",
+                                          lsn, guard.error().Message());
+                    }
+                    for (const auto& stmt : *batch) {
+                        auto executed = sql_->Execute(stmt.sql, stmt.params);
+                        if (!executed) {
+                            return MAKE_ERROR(ErrorCode::CorruptedData, "WAL batch statement execution failed at LSN {}: {}",
+                                              lsn, executed.error().Message());
+                        }
+                    }
+                    auto committed = guard->Commit();
+                    if (!committed) {
+                        return MAKE_ERROR(ErrorCode::CorruptedData, "WAL batch transaction commit failed at LSN {}: {}",
+                                          lsn, committed.error().Message());
+                    }
+                    return {};
                 }
                 return {};
             });
@@ -159,6 +207,7 @@ Result<void> Engine::Recover() {
     WalOptions wal_options;
     wal_options.path = WalPath();
     wal_options.mode = options_.durability;
+    wal_options.group_commit_interval_us = static_cast<uint32_t>(options_.wal_group_commit_ms * 1000);
     auto wal = WalManager::Open(wal_options, next_lsn);
     if (!wal) {
         return std::unexpected(wal.error());
@@ -184,6 +233,15 @@ Result<QueryResult> Engine::ExecuteSql(std::string_view sql, std::span<const Val
     QueryResult result;
     {
         std::lock_guard<std::mutex> lock(write_mutex_);
+        std::optional<TransactionGuard> tx;
+        if (!IsReadOnlyQuery(sql)) {
+            auto tx_res = TransactionGuard::Begin(*sql_);
+            if (!tx_res) {
+                return std::unexpected(tx_res.error());
+            }
+            tx = std::move(*tx_res);
+        }
+
         auto executed = sql_->Execute(sql, params);
         if (!executed) {
             return executed;
@@ -205,6 +263,13 @@ Result<QueryResult> Engine::ExecuteSql(std::string_view sql, std::span<const Val
             must_wait = true;
             records_since_checkpoint_++;
 
+            if (tx) {
+                auto committed = tx->Commit();
+                if (!committed) {
+                    return std::unexpected(committed.error());
+                }
+            }
+
             const bool auto_checkpoint = options_.durability != DurabilityMode::MemoryOnly &&
                                          options_.checkpoint_wal_records > 0 &&
                                          records_since_checkpoint_ >= options_.checkpoint_wal_records;
@@ -215,6 +280,11 @@ Result<QueryResult> Engine::ExecuteSql(std::string_view sql, std::span<const Val
                 } else {
                     must_wait = false;  // the snapshot already covers this record
                 }
+            }
+        } else if (tx) {
+            auto committed = tx->Commit();
+            if (!committed) {
+                return std::unexpected(committed.error());
             }
         }
     }
@@ -227,6 +297,34 @@ Result<QueryResult> Engine::ExecuteSql(std::string_view sql, std::span<const Val
         }
     }
     return result;
+}
+
+Result<std::pair<lsn_t, bool>> Engine::AppendSqlBatchLocked(std::span<const DecodedStatement> statements) {
+    thread_local std::vector<uint8_t> payload;
+    payload.clear();
+    EncodeStatementBatch(payload, statements);
+
+    auto appended = wal_->AppendNoWait(WalRecordType::SqlBatch, payload);
+    if (!appended) {
+        LOG_ERROR("WAL append failed for batch: {}", appended.error());
+        return std::unexpected(appended.error());
+    }
+    lsn_t lsn = *appended;
+    bool must_wait = true;
+    records_since_checkpoint_++;
+
+    const bool auto_checkpoint = options_.durability != DurabilityMode::MemoryOnly &&
+                                 options_.checkpoint_wal_records > 0 &&
+                                 records_since_checkpoint_ >= options_.checkpoint_wal_records;
+    if (auto_checkpoint) {
+        auto checkpointed = CheckpointLocked();
+        if (!checkpointed) {
+            LOG_WARN("Automatic checkpoint failed: {}", checkpointed.error());
+        } else {
+            must_wait = false;  // the snapshot already covers this record
+        }
+    }
+    return std::make_pair(lsn, must_wait);
 }
 
 Result<lsn_t> Engine::CheckpointLocked() {

@@ -28,7 +28,8 @@ struct ParsedRecord {
 
 bool IsKnownType(uint8_t type) {
     return type == static_cast<uint8_t>(WalRecordType::SqlStatement) ||
-           type == static_cast<uint8_t>(WalRecordType::Checkpoint);
+           type == static_cast<uint8_t>(WalRecordType::Checkpoint) ||
+           type == static_cast<uint8_t>(WalRecordType::SqlBatch);
 }
 
 ParsedRecord ParseRecordAt(std::span<const uint8_t> data, idx_t offset) {
