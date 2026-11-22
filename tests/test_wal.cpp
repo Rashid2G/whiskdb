@@ -607,6 +607,40 @@ void PrintThroughput() {
     }
 }
 
+void TestSqlBatchRecord() {
+    std::println("Running TestSqlBatchRecord...");
+    TempDir dir;
+    auto wal_path = dir.File("batch.wal");
+
+    {
+        auto wal = OpenWal(wal_path, DurabilityMode::Strict);
+        auto p1 = MakePayload(10, 50);
+        auto p2 = MakePayload(20, 100);
+        auto p3 = MakePayload(30, 25);
+
+        auto lsn1 = wal->Append(WalRecordType::SqlStatement, p1);
+        assert(lsn1.has_value() && *lsn1 == 1);
+
+        auto lsn2 = wal->Append(WalRecordType::SqlBatch, p2);
+        assert(lsn2.has_value() && *lsn2 == 2);
+
+        auto lsn3 = wal->Append(WalRecordType::Checkpoint, p3);
+        assert(lsn3.has_value() && *lsn3 == 3);
+    }
+
+    std::vector<Rec> out;
+    auto stats = Replay(wal_path, 0, out);
+    assert(stats.has_value());
+    assert(stats->records_applied == 3);
+    assert(stats->last_lsn == 3);
+    assert(stats->truncated_tail == false);
+
+    assert(out.size() == 3);
+    assert(out[0].lsn == 1 && out[0].type == WalRecordType::SqlStatement && out[0].payload == MakePayload(10, 50));
+    assert(out[1].lsn == 2 && out[1].type == WalRecordType::SqlBatch && out[1].payload == MakePayload(20, 100));
+    assert(out[2].lsn == 3 && out[2].type == WalRecordType::Checkpoint && out[2].payload == MakePayload(30, 25));
+}
+
 } // namespace
 
 int main() {
@@ -622,6 +656,7 @@ int main() {
     TestResetAndDestructorFlush();
     TestCallbackError();
     TestAppendNoWaitWaitDurable();
+    TestSqlBatchRecord();
     PrintThroughput();
     std::println("test_wal: OK");
     return 0;

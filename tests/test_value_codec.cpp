@@ -306,12 +306,137 @@ void test_query_result_codec() {
     }
 }
 
+void test_statement_batch_codec() {
+    std::println("Running test_statement_batch_codec...");
+
+    // 1. Empty batch
+    {
+        std::vector<DecodedStatement> batch;
+        std::vector<uint8_t> out;
+        EncodeStatementBatch(out, batch);
+        assert(out.size() == 4);
+
+        auto dec = DecodeStatementBatch(out);
+        assert(dec.has_value());
+        assert(dec->empty());
+    }
+
+    // 2. Single statement
+    {
+        std::vector<DecodedStatement> batch = {
+            {"INSERT INTO t VALUES (?1)", {int64_t(42)}}
+        };
+        std::vector<uint8_t> out;
+        EncodeStatementBatch(out, batch);
+
+        auto dec = DecodeStatementBatch(out);
+        assert(dec.has_value());
+        assert(dec->size() == 1);
+        assert((*dec)[0].sql == "INSERT INTO t VALUES (?1)");
+        assert((*dec)[0].params.size() == 1);
+        assert(std::get<int64_t>((*dec)[0].params[0]) == 42);
+    }
+
+    // 3. Multi-statement with all Value types
+    {
+        std::vector<DecodedStatement> batch = {
+            {"CREATE TABLE all_types (a, b, c, d, e)", {}},
+            {"INSERT INTO all_types VALUES (?1, ?2, ?3, ?4, ?5)",
+             {std::monostate{}, int64_t(-999), 3.14159, std::string("WhiskDB"), Blob{0xDE, 0xAD, 0xBE, 0xEF}}},
+            {"UPDATE all_types SET a = ?1", {int64_t(1)}}
+        };
+        std::vector<uint8_t> out;
+        EncodeStatementBatch(out, batch);
+
+        auto dec = DecodeStatementBatch(out);
+        assert(dec.has_value());
+        assert(dec->size() == 3);
+
+        assert((*dec)[0].sql == "CREATE TABLE all_types (a, b, c, d, e)");
+        assert((*dec)[0].params.empty());
+
+        assert((*dec)[1].sql == "INSERT INTO all_types VALUES (?1, ?2, ?3, ?4, ?5)");
+        assert((*dec)[1].params.size() == 5);
+        assert(std::holds_alternative<std::monostate>((*dec)[1].params[0]));
+        assert(std::get<int64_t>((*dec)[1].params[1]) == -999);
+        assert(std::get<double>((*dec)[1].params[2]) == 3.14159);
+        assert(std::get<std::string>((*dec)[1].params[3]) == "WhiskDB");
+        assert(std::get<Blob>((*dec)[1].params[4]) == Blob({0xDE, 0xAD, 0xBE, 0xEF}));
+
+        assert((*dec)[2].sql == "UPDATE all_types SET a = ?1");
+        assert((*dec)[2].params.size() == 1);
+        assert(std::get<int64_t>((*dec)[2].params[0]) == 1);
+    }
+
+    // 4. Truncated inputs
+    {
+        // empty buffer (< 4 bytes)
+        std::vector<uint8_t> empty;
+        assert(!DecodeStatementBatch(empty).has_value());
+        assert(DecodeStatementBatch(empty).error().Code() == ErrorCode::ProtocolError);
+
+        std::vector<uint8_t> three_bytes = {0, 0, 0};
+        assert(!DecodeStatementBatch(three_bytes).has_value());
+        assert(DecodeStatementBatch(three_bytes).error().Code() == ErrorCode::ProtocolError);
+
+        // Count = 1, but truncated statement length (< 4 bytes after count)
+        std::vector<uint8_t> trunc_len = {0, 0, 0, 1, 0, 0};
+        assert(!DecodeStatementBatch(trunc_len).has_value());
+        assert(DecodeStatementBatch(trunc_len).error().Code() == ErrorCode::ProtocolError);
+    }
+
+    // 5. Absurd count (OOM DoS protection)
+    {
+        // Count = 0xFFFFFFFF with small payload
+        std::vector<uint8_t> absurd = {0xFF, 0xFF, 0xFF, 0xFF, 1, 2, 3, 4};
+        auto dec = DecodeStatementBatch(absurd);
+        assert(!dec.has_value());
+        assert(dec.error().Code() == ErrorCode::ProtocolError);
+
+        // Count = 100 with only 4 bytes remaining (need at least 400 bytes)
+        std::vector<uint8_t> count_100 = {0, 0, 0, 100, 0, 0, 0, 0};
+        auto dec2 = DecodeStatementBatch(count_100);
+        assert(!dec2.has_value());
+        assert(dec2.error().Code() == ErrorCode::ProtocolError);
+    }
+
+    // 6. Bad stmt_len
+    {
+        // Count = 1, stmt_len = 1000, but only 4 bytes remaining
+        std::vector<uint8_t> bad_len = {0, 0, 0, 1, 0, 0, 3, 0xE8, 0, 1, 2, 3};
+        auto dec = DecodeStatementBatch(bad_len);
+        assert(!dec.has_value());
+        assert(dec.error().Code() == ErrorCode::ProtocolError);
+
+        // Inner DecodeStatement error (stmt_len matches, but inner statement payload is corrupted)
+        std::vector<uint8_t> bad_inner = {0, 0, 0, 1, 0, 0, 0, 2, 0xFF, 0xFF};
+        auto dec_inner = DecodeStatementBatch(bad_inner);
+        assert(!dec_inner.has_value());
+        assert(dec_inner.error().Code() == ErrorCode::ProtocolError);
+    }
+
+    // 7. Trailing garbage
+    {
+        std::vector<DecodedStatement> batch = {
+            {"SELECT 1", {}}
+        };
+        std::vector<uint8_t> out;
+        EncodeStatementBatch(out, batch);
+        out.push_back(0xCC); // extra byte
+
+        auto dec = DecodeStatementBatch(out);
+        assert(!dec.has_value());
+        assert(dec.error().Code() == ErrorCode::ProtocolError);
+    }
+}
+
 int main() {
     std::println("=== Running Value Codec Tests ===");
     test_value_roundtrips();
     test_value_rejections();
     test_statement_codec();
     test_query_result_codec();
+    test_statement_batch_codec();
     std::println("=== All Value Codec Tests Passed! ===");
     return 0;
 }

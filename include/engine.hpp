@@ -7,6 +7,7 @@
 #include "network/server.hpp"
 #include "sql/sql_engine.hpp"
 #include "sql/sql_types.hpp"
+#include "sql/value_codec.hpp"
 #include "storage/durability.hpp"
 #include "storage/wal_manager.hpp"
 
@@ -27,6 +28,9 @@ struct EngineOptions {
     uint16_t port = 8080;
     idx_t io_threads = 2;
     idx_t checkpoint_wal_records = 100000;   ///< 0 disables automatic checkpoints
+    idx_t wal_group_commit_ms = 10;
+    idx_t wasm_max_fuel = 100'000'000;
+    idx_t wasm_max_memory_mb = 64;
 
     /// Build options from config.toml values (validates durability_mode)
     static Result<EngineOptions> FromConfig(const Config& config);
@@ -76,6 +80,7 @@ private:
 
     Result<void> Recover();
     Result<lsn_t> CheckpointLocked();
+    Result<std::pair<lsn_t, bool>> AppendSqlBatchLocked(std::span<const DecodedStatement> statements);
     std::filesystem::path WalPath() const;
     std::filesystem::path SnapshotPath() const;
 

@@ -133,20 +133,11 @@ private:
             const Request& req = *req_res;
             Response resp;
 
-            if (req.opcode == Opcode::WhiskPublish ||
-                req.opcode == Opcode::WhiskCall ||
-                req.opcode == Opcode::WhiskList) {
-                resp.status = ErrorCode::NotImplemented;
-                std::string msg = "Opcode not implemented";
-                resp.payload.assign(msg.begin(), msg.end());
-                resp.exec_us = 0;
-            } else {
-                auto start_time = std::chrono::steady_clock::now();
-                resp = handler_(req);
-                auto end_time = std::chrono::steady_clock::now();
-                if (resp.exec_us == 0) {
-                    resp.exec_us = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count();
-                }
+            auto start_time = std::chrono::steady_clock::now();
+            resp = handler_(req);
+            auto end_time = std::chrono::steady_clock::now();
+            if (resp.exec_us == 0) {
+                resp.exec_us = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count();
             }
 
             SendResponse(resp, /*close_after=*/false);
