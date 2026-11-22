@@ -69,13 +69,55 @@ else()
   target_include_directories(toml_headers SYSTEM INTERFACE ${tomlplusplus_SOURCE_DIR}/include)
 endif()
 
+# Wasmtime C API
+set(WASMTIME_SEARCH_PATHS
+  ${WASMTIME_ROOT}
+  $ENV{WASMTIME_ROOT}
+  ${CMAKE_PREFIX_PATH}
+  /usr/local
+  /usr
+  $ENV{HOME}/.local
+  $ENV{HOME}/.whisk-tools
+)
+
+find_path(WASMTIME_INCLUDE_DIR wasmtime.h
+  PATHS ${WASMTIME_SEARCH_PATHS}
+  PATH_SUFFIXES include
+)
+
+find_library(WASMTIME_LIBRARY
+  NAMES libwasmtime.so wasmtime libwasmtime libwasmtime.a
+  PATHS ${WASMTIME_SEARCH_PATHS}
+  PATH_SUFFIXES lib lib64
+)
+
+if(NOT WASMTIME_INCLUDE_DIR OR NOT WASMTIME_LIBRARY)
+  FetchContent_Declare(wasmtime_c_api
+    URL https://github.com/bytecodealliance/wasmtime/releases/download/v50.0.1/wasmtime-v50.0.1-x86_64-linux-c-api.tar.xz
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+  FetchContent_MakeAvailable(wasmtime_c_api)
+  set(WASMTIME_INCLUDE_DIR "${wasmtime_c_api_SOURCE_DIR}/include")
+  if(EXISTS "${wasmtime_c_api_SOURCE_DIR}/lib/libwasmtime.so")
+    set(WASMTIME_LIBRARY "${wasmtime_c_api_SOURCE_DIR}/lib/libwasmtime.so")
+  else()
+    set(WASMTIME_LIBRARY "${wasmtime_c_api_SOURCE_DIR}/lib/libwasmtime.a")
+  endif()
+endif()
+
+add_library(wasmtime_lib INTERFACE)
+target_include_directories(wasmtime_lib SYSTEM INTERFACE ${WASMTIME_INCLUDE_DIR})
+target_link_libraries(wasmtime_lib INTERFACE ${WASMTIME_LIBRARY})
+if(WASMTIME_LIBRARY MATCHES "\\.a$")
+  target_link_libraries(wasmtime_lib INTERFACE Threads::Threads ${CMAKE_DL_LIBS} m)
+endif()
+
 # ---------------------------------------------------------------------------
 # Core library: every src/**/*.cpp
 # ---------------------------------------------------------------------------
 file(GLOB_RECURSE WHISKDB_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/src/*.cpp)
 add_library(whiskdb_core STATIC ${WHISKDB_SOURCES})
 target_include_directories(whiskdb_core PUBLIC ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(whiskdb_core PUBLIC asio_headers toml_headers SQLite::SQLite3)
+target_link_libraries(whiskdb_core PUBLIC asio_headers toml_headers SQLite::SQLite3 wasmtime_lib)
 target_compile_options(whiskdb_core PUBLIC -Wall -Wextra -Wpedantic)
 
 if(WHISKDB_SANITIZE)
@@ -110,6 +152,7 @@ endfunction()
 
 # Explicitly register core test suites via add_whisk_test
 add_whisk_test(test_config tests/test_config.cpp)
+add_whisk_test(test_wasm_runtime tests/test_wasm_runtime.cpp)
 
 file(GLOB WHISKDB_TESTS CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tests/test_*.cpp)
 foreach(test_src ${WHISKDB_TESTS})
