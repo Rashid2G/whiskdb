@@ -5,11 +5,14 @@
 #include "errors.hpp"
 #include "network/protocol.hpp"
 #include "network/server.hpp"
+#include "network/whisk_codec.hpp"
 #include "sql/sql_engine.hpp"
 #include "sql/sql_types.hpp"
 #include "sql/value_codec.hpp"
 #include "storage/durability.hpp"
 #include "storage/wal_manager.hpp"
+#include "wasm/module_registry.hpp"
+#include "wasm/wasm_runtime.hpp"
 
 #include <filesystem>
 #include <memory>
@@ -62,6 +65,19 @@ public:
     /// Execute one SQL statement. Mutations are logged to the WAL before this returns.
     Result<QueryResult> ExecuteSql(std::string_view sql, std::span<const Value> params = {});
 
+    /// Compile, run lifecycle hook, persist to catalog + WAL, and cache a WASM module atomically.
+    Result<WhiskPublishResponse> PublishModule(std::string_view name, std::span<const uint8_t> wasm_bytes);
+
+    /// Invoke an exported Whisk function inside an atomic SQL + WAL transaction.
+    Result<WhiskCallResponse> CallWhisk(std::string_view module_name, std::string_view func_name,
+                                        std::string_view args_json = "{}");
+
+    /// List all published Whisk modules currently loaded in the registry.
+    Result<WhiskListResponse> ListModules();
+
+    /// Return prepared-statement cache statistics from the underlying SQL engine.
+    SqlEngine::CacheStats GetSqlCacheStats() const;
+
     /// Serialize the database to a snapshot and reset the WAL. Returns the snapshot LSN.
     Result<lsn_t> Checkpoint();
 
@@ -89,6 +105,8 @@ private:
     RecoveryInfo recovery_;
     std::unique_ptr<SqlEngine> sql_;
     std::unique_ptr<WalManager> wal_;
+    std::unique_ptr<WasmRuntime> wasm_;
+    std::unique_ptr<ModuleRegistry> registry_;
     std::unique_ptr<Server> server_;
     std::mutex write_mutex_;                 ///< Orders execute + WAL append for all statements
     idx_t records_since_checkpoint_ = 0;

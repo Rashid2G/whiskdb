@@ -6,10 +6,13 @@
 #include "sql/value_codec.hpp"
 #include "storage/snapshot_manager.hpp"
 #include "storage/wal_reader.hpp"
+#include "wasm/host_abi.hpp"
 
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cstring>
+#include <limits>
 #include <optional>
 
 namespace database {
@@ -18,7 +21,6 @@ namespace {
 
 constexpr std::string_view WAL_FILE_NAME = "whiskdb.wal";
 constexpr std::string_view SNAPSHOT_FILE_NAME = "snapshot.whisk";
-constexpr idx_t LOGS_FETCH_LINES = 200;
 
 /// Statements that change transaction state cannot be logged statement-by-statement:
 /// replaying a rolled-back transaction would resurrect its writes.
@@ -214,10 +216,27 @@ Result<void> Engine::Recover() {
     }
     wal_ = std::move(*wal);
 
-    LOG_INFO("Engine opened: mode={}, snapshot={} (lsn {}), WAL records replayed={}{}",
+    auto wasm = WasmRuntime::Create(WasmConfig{options_.wasm_max_fuel, options_.wasm_max_memory_mb});
+    if (!wasm) {
+        return std::unexpected(wasm.error());
+    }
+    wasm_ = std::move(*wasm);
+
+    auto abi = RegisterHostAbi(wasm_->Linker());
+    if (!abi) {
+        return std::unexpected(abi.error());
+    }
+
+    registry_ = std::make_unique<ModuleRegistry>(*wasm_);
+    auto loaded_modules = registry_->LoadFromCatalog(*sql_);
+    if (!loaded_modules) {
+        return std::unexpected(loaded_modules.error());
+    }
+
+    LOG_INFO("Engine opened: mode={}, snapshot={} (lsn {}), WAL records replayed={}{}, WASM modules loaded={}",
              ToString(options_.durability), recovery_.snapshot_loaded ? "loaded" : "none",
              recovery_.snapshot_lsn, recovery_.wal_records_replayed,
-             recovery_.wal_tail_truncated ? ", torn tail truncated" : "");
+             recovery_.wal_tail_truncated ? ", torn tail truncated" : "", *loaded_modules);
     return {};
 }
 
@@ -297,6 +316,319 @@ Result<QueryResult> Engine::ExecuteSql(std::string_view sql, std::span<const Val
         }
     }
     return result;
+}
+
+Result<WhiskPublishResponse> Engine::PublishModule(std::string_view name, std::span<const uint8_t> wasm_bytes) {
+    // Engine::Recover always initializes sql_, wal_, and registry_ before Engine::Open returns
+    D_ASSERT(sql_ != nullptr && wal_ != nullptr && registry_ != nullptr);
+
+    lsn_t lsn = 0;
+    bool must_wait = false;
+    WhiskPublishResponse resp;
+
+    {
+        std::lock_guard<std::mutex> lock(write_mutex_);
+        auto tx = TransactionGuard::Begin(*sql_);
+        if (!tx) {
+            return std::unexpected(tx.error());
+        }
+
+        auto prepared = registry_->PreparePublish(*sql_, name, wasm_bytes);
+        if (!prepared) {
+            return std::unexpected(prepared.error());
+        }
+
+        const bool mutated = !prepared->mutating_statements.empty();
+        if (mutated) {
+            thread_local std::vector<uint8_t> payload;
+            payload.clear();
+            EncodeStatementBatch(payload, prepared->mutating_statements);
+
+            auto appended = wal_->AppendNoWait(WalRecordType::SqlBatch, payload);
+            if (!appended) {
+                LOG_ERROR("WAL append failed during PublishModule('{}'): {}", name, appended.error());
+                return std::unexpected(appended.error());
+            }
+            lsn = *appended;
+            must_wait = true;
+        }
+
+        auto committed = tx->Commit();
+        if (!committed) {
+            return std::unexpected(committed.error());
+        }
+
+        if (mutated) {
+            records_since_checkpoint_++;
+            const bool auto_checkpoint = options_.durability != DurabilityMode::MemoryOnly &&
+                                         options_.checkpoint_wal_records > 0 &&
+                                         records_since_checkpoint_ >= options_.checkpoint_wal_records;
+            if (auto_checkpoint) {
+                auto checkpointed = CheckpointLocked();
+                if (!checkpointed) {
+                    LOG_WARN("Automatic checkpoint failed: {}", checkpointed.error());
+                } else {
+                    must_wait = false;
+                }
+            }
+        }
+
+        resp.module_name = prepared->module.name;
+        resp.version = prepared->module.version;
+        resp.sha256 = prepared->module.sha256;
+        resp.exported_funcs = prepared->module.exported_funcs;
+        registry_->CommitCachedModule(std::move(prepared->module));
+    }
+
+    if (must_wait) {
+        auto durable = wal_->WaitDurable(lsn);
+        if (!durable) {
+            return std::unexpected(durable.error());
+        }
+    }
+    return resp;
+}
+
+Result<WhiskCallResponse> Engine::CallWhisk(std::string_view module_name, std::string_view func_name,
+                                            std::string_view args_json) {
+    // Engine::Recover always initializes sql_, wal_, wasm_, and registry_ before Engine::Open returns
+    D_ASSERT(sql_ != nullptr && wal_ != nullptr && wasm_ != nullptr && registry_ != nullptr);
+
+    auto cached = registry_->Get(module_name);
+    if (!cached) {
+        return MAKE_ERROR(ErrorCode::NotFound, "Whisk module '{}' not found", module_name);
+    }
+
+    if (std::find(cached->exported_funcs.begin(), cached->exported_funcs.end(), func_name) ==
+        cached->exported_funcs.end()) {
+        return MAKE_ERROR(ErrorCode::NotFound, "Function '{}' not found in Whisk module '{}'",
+                          func_name, module_name);
+    }
+
+    if (args_json.size() > static_cast<size_t>(std::numeric_limits<int32_t>::max())) {
+        return MAKE_ERROR(ErrorCode::InvalidArgument, "Whisk arguments exceed maximum size");
+    }
+
+    lsn_t lsn = 0;
+    bool must_wait = false;
+    WhiskCallResponse resp;
+
+    {
+        std::lock_guard<std::mutex> lock(write_mutex_);
+        auto tx = TransactionGuard::Begin(*sql_);
+        if (!tx) {
+            return std::unexpected(tx.error());
+        }
+
+        WhiskCallContext ctx{sql_.get(), std::string(module_name), {}, std::nullopt};
+        auto store = wasm_->CreateStore(&ctx);
+        if (!store) {
+            return std::unexpected(store.error());
+        }
+
+        wasmtime_instance_t instance{};
+        wasm_trap_t* trap = nullptr;
+        wasmtime_error_t* err = wasmtime_linker_instantiate(
+            wasm_->Linker(), store->Context(), cached->compiled.get(), &instance, &trap);
+        if (err) {
+            return std::unexpected(WasmRuntime::TranslateError(err));
+        }
+        if (trap) {
+            return std::unexpected(WasmRuntime::TranslateTrap(trap));
+        }
+
+        wasmtime_extern_t mem_ext{};
+        if (!wasmtime_instance_export_get(store->Context(), &instance, "memory", 6, &mem_ext) ||
+            mem_ext.kind != WASMTIME_EXTERN_MEMORY) {
+            return MAKE_ERROR(ErrorCode::WasmError, "Whisk module '{}' missing exported 'memory'", module_name);
+        }
+
+        wasmtime_extern_t alloc_ext{};
+        if (!wasmtime_instance_export_get(store->Context(), &instance, "whisk_alloc", 11, &alloc_ext) ||
+            alloc_ext.kind != WASMTIME_EXTERN_FUNC) {
+            return MAKE_ERROR(ErrorCode::WasmError, "Whisk module '{}' missing exported 'whisk_alloc'", module_name);
+        }
+
+        wasmtime_extern_t res_ptr_ext{};
+        if (!wasmtime_instance_export_get(store->Context(), &instance, "whisk_result_ptr", 16, &res_ptr_ext) ||
+            res_ptr_ext.kind != WASMTIME_EXTERN_FUNC) {
+            return MAKE_ERROR(ErrorCode::WasmError, "Whisk module '{}' missing exported 'whisk_result_ptr'",
+                              module_name);
+        }
+
+        wasmtime_extern_t res_len_ext{};
+        if (!wasmtime_instance_export_get(store->Context(), &instance, "whisk_result_len", 16, &res_len_ext) ||
+            res_len_ext.kind != WASMTIME_EXTERN_FUNC) {
+            return MAKE_ERROR(ErrorCode::WasmError, "Whisk module '{}' missing exported 'whisk_result_len'",
+                              module_name);
+        }
+
+        wasmtime_extern_t fn_ext{};
+        if (!wasmtime_instance_export_get(store->Context(), &instance, func_name.data(), func_name.size(), &fn_ext) ||
+            fn_ext.kind != WASMTIME_EXTERN_FUNC) {
+            return MAKE_ERROR(ErrorCode::NotFound, "Function '{}' not found in Whisk module '{}'",
+                              func_name, module_name);
+        }
+
+        int32_t args_ptr = 0;
+        const int32_t args_len = static_cast<int32_t>(args_json.size());
+        if (!args_json.empty()) {
+            wasmtime_val_t alloc_arg[1];
+            alloc_arg[0].kind = WASMTIME_I32;
+            alloc_arg[0].of.i32 = args_len;
+            wasmtime_val_t alloc_res[1];
+            err = wasmtime_func_call(store->Context(), &alloc_ext.of.func, alloc_arg, 1, alloc_res, 1, &trap);
+            if (err) {
+                return std::unexpected(WasmRuntime::TranslateError(err));
+            }
+            if (trap) {
+                return std::unexpected(WasmRuntime::TranslateTrap(trap));
+            }
+            if (alloc_res[0].kind != WASMTIME_I32 || alloc_res[0].of.i32 <= 0) {
+                return MAKE_ERROR(ErrorCode::WasmError, "whisk_alloc failed in module '{}'", module_name);
+            }
+            args_ptr = alloc_res[0].of.i32;
+
+            uint8_t* mem_data = wasmtime_memory_data(store->Context(), &mem_ext.of.memory);
+            const size_t mem_size = wasmtime_memory_data_size(store->Context(), &mem_ext.of.memory);
+            if (static_cast<uint64_t>(args_ptr) + args_json.size() > mem_size) {
+                return MAKE_ERROR(ErrorCode::WasmError, "whisk_alloc returned out-of-bounds pointer in module '{}'",
+                                  module_name);
+            }
+            std::memcpy(mem_data + args_ptr, args_json.data(), args_json.size());
+        }
+
+        wasmtime_val_t call_args[2];
+        call_args[0].kind = WASMTIME_I32;
+        call_args[0].of.i32 = args_ptr;
+        call_args[1].kind = WASMTIME_I32;
+        call_args[1].of.i32 = args_len;
+        wasmtime_val_t call_res[1];
+        err = wasmtime_func_call(store->Context(), &fn_ext.of.func, call_args, 2, call_res, 1, &trap);
+        const uint64_t fuel_used = store->ConsumedFuel();
+        if (err) {
+            return std::unexpected(WasmRuntime::TranslateError(err));
+        }
+        if (trap) {
+            return std::unexpected(WasmRuntime::TranslateTrap(trap));
+        }
+        if (call_res[0].kind != WASMTIME_I32) {
+            return MAKE_ERROR(ErrorCode::WasmError, "Whisk '{}.{}' did not return i32 status",
+                              module_name, func_name);
+        }
+        const int32_t rc = call_res[0].of.i32;
+
+        wasmtime_val_t ptr_res[1];
+        err = wasmtime_func_call(store->Context(), &res_ptr_ext.of.func, nullptr, 0, ptr_res, 1, &trap);
+        if (err) {
+            return std::unexpected(WasmRuntime::TranslateError(err));
+        }
+        if (trap) {
+            return std::unexpected(WasmRuntime::TranslateTrap(trap));
+        }
+        wasmtime_val_t len_res[1];
+        err = wasmtime_func_call(store->Context(), &res_len_ext.of.func, nullptr, 0, len_res, 1, &trap);
+        if (err) {
+            return std::unexpected(WasmRuntime::TranslateError(err));
+        }
+        if (trap) {
+            return std::unexpected(WasmRuntime::TranslateTrap(trap));
+        }
+
+        if (ptr_res[0].kind != WASMTIME_I32 || len_res[0].kind != WASMTIME_I32) {
+            return MAKE_ERROR(ErrorCode::WasmError, "Invalid result buffer metadata from Whisk '{}.{}'",
+                              module_name, func_name);
+        }
+        const int32_t out_ptr = ptr_res[0].of.i32;
+        const int32_t out_len = len_res[0].of.i32;
+
+        // Re-query guest memory after the call in case linear memory grew
+        const uint8_t* mem_data = wasmtime_memory_data(store->Context(), &mem_ext.of.memory);
+        const size_t mem_size = wasmtime_memory_data_size(store->Context(), &mem_ext.of.memory);
+        if (out_ptr < 0 || out_len < 0 ||
+            static_cast<uint64_t>(out_ptr) + static_cast<uint64_t>(out_len) > mem_size) {
+            return MAKE_ERROR(ErrorCode::WasmError, "Whisk '{}.{}' returned out-of-bounds result buffer",
+                              module_name, func_name);
+        }
+        std::string output_str(reinterpret_cast<const char*>(mem_data + out_ptr),
+                               static_cast<size_t>(out_len));
+
+        if (rc != 0) {
+            return MAKE_ERROR(ErrorCode::WasmError, "Whisk '{}.{}' failed (rc={}): {}",
+                              module_name, func_name, rc, output_str);
+        }
+
+        const bool mutated = !ctx.mutating_statements.empty();
+        if (mutated) {
+            thread_local std::vector<uint8_t> payload;
+            payload.clear();
+            EncodeStatementBatch(payload, ctx.mutating_statements);
+
+            auto appended = wal_->AppendNoWait(WalRecordType::SqlBatch, payload);
+            if (!appended) {
+                LOG_ERROR("WAL append failed during CallWhisk('{}.{}'): {}", module_name, func_name,
+                          appended.error());
+                return std::unexpected(appended.error());
+            }
+            lsn = *appended;
+            must_wait = true;
+        }
+
+        auto committed = tx->Commit();
+        if (!committed) {
+            return std::unexpected(committed.error());
+        }
+
+        if (mutated) {
+            records_since_checkpoint_++;
+            const bool auto_checkpoint = options_.durability != DurabilityMode::MemoryOnly &&
+                                         options_.checkpoint_wal_records > 0 &&
+                                         records_since_checkpoint_ >= options_.checkpoint_wal_records;
+            if (auto_checkpoint) {
+                auto checkpointed = CheckpointLocked();
+                if (!checkpointed) {
+                    LOG_WARN("Automatic checkpoint failed: {}", checkpointed.error());
+                } else {
+                    must_wait = false;
+                }
+            }
+        }
+
+        resp.result_json = std::move(output_str);
+        resp.fuel_used = fuel_used;
+    }
+
+    if (must_wait) {
+        auto durable = wal_->WaitDurable(lsn);
+        if (!durable) {
+            return std::unexpected(durable.error());
+        }
+    }
+    return resp;
+}
+
+Result<WhiskListResponse> Engine::ListModules() {
+    // Engine::Recover always initializes registry_ before Engine::Open returns
+    D_ASSERT(registry_ != nullptr);
+    auto cached_list = registry_->List();
+    WhiskListResponse resp;
+    resp.modules.reserve(cached_list.size());
+    for (auto& mod : cached_list) {
+        WhiskModuleSummary summary;
+        summary.name = std::move(mod.name);
+        summary.version = mod.version;
+        summary.sha256 = std::move(mod.sha256);
+        summary.exported_funcs = std::move(mod.exported_funcs);
+        summary.updated_at = mod.updated_at;
+        resp.modules.push_back(std::move(summary));
+    }
+    return resp;
+}
+
+SqlEngine::CacheStats Engine::GetSqlCacheStats() const {
+    // Engine::Recover always initializes sql_ before Engine::Open returns
+    D_ASSERT(sql_ != nullptr);
+    return sql_->GetCacheStats();
 }
 
 Result<std::pair<lsn_t, bool>> Engine::AppendSqlBatchLocked(std::span<const DecodedStatement> statements) {
@@ -385,9 +717,49 @@ Response Engine::Handle(const Request& request) {
         EncodeQueryResult(response.payload, *result);
         break;
     }
+    case Opcode::WhiskPublish: {
+        auto req = DecodeWhiskPublishRequest(request.payload);
+        if (!req) {
+            return ErrorResponse(req.error(), elapsed_us());
+        }
+        auto result = PublishModule(req->module_name, req->wasm_bytes);
+        if (!result) {
+            return ErrorResponse(result.error(), elapsed_us());
+        }
+        EncodeWhiskPublishResponse(response.payload, *result);
+        break;
+    }
+    case Opcode::WhiskCall: {
+        auto req = DecodeWhiskCallRequest(request.payload);
+        if (!req) {
+            return ErrorResponse(req.error(), elapsed_us());
+        }
+        auto result = CallWhisk(req->module_name, req->func_name, req->args_json);
+        if (!result) {
+            return ErrorResponse(result.error(), elapsed_us());
+        }
+        EncodeWhiskCallResponse(response.payload, *result);
+        break;
+    }
+    case Opcode::WhiskList: {
+        if (!request.payload.empty()) {
+            return ErrorResponse(Error(ErrorCode::ProtocolError, "WhiskList request payload must be empty"),
+                                 elapsed_us());
+        }
+        auto result = ListModules();
+        if (!result) {
+            return ErrorResponse(result.error(), elapsed_us());
+        }
+        EncodeWhiskListResponse(response.payload, *result);
+        break;
+    }
     case Opcode::Logs: {
+        auto req = DecodeLogsRequest(request.payload);
+        if (!req) {
+            return ErrorResponse(req.error(), elapsed_us());
+        }
         std::string text;
-        for (const auto& line : Logger::GetRecentLogs(LOGS_FETCH_LINES)) {
+        for (const auto& line : Logger::GetRecentLogs(req->limit)) {
             text += line;
             text += '\n';
         }
