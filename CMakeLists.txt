@@ -142,6 +142,13 @@ enable_testing()
 
 find_program(WHISKDB_WASM_CLANGXX NAMES clang++ PATHS "$ENV{HOME}/.whisk-tools/bin" /usr/bin /usr/local/bin)
 
+if(TARGET whisk_bench)
+  target_compile_definitions(whisk_bench PRIVATE WHISKDB_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+  if(WHISKDB_WASM_CLANGXX)
+    target_compile_definitions(whisk_bench PRIVATE WHISKDB_WASM_CLANGXX="${WHISKDB_WASM_CLANGXX}")
+  endif()
+endif()
+
 function(add_whisk_test test_name test_src)
   if(NOT TARGET ${test_name})
     add_executable(${test_name} ${test_src})
