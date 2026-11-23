@@ -119,6 +119,7 @@ add_library(whiskdb_core STATIC ${WHISKDB_SOURCES})
 target_include_directories(whiskdb_core PUBLIC ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(whiskdb_core PUBLIC asio_headers toml_headers SQLite::SQLite3 wasmtime_lib)
 target_compile_options(whiskdb_core PUBLIC -Wall -Wextra -Wpedantic)
+target_compile_definitions(whiskdb_core PRIVATE WHISKDB_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
 if(WHISKDB_SANITIZE)
   target_compile_options(whiskdb_core PUBLIC -fsanitize=undefined -fno-sanitize-recover=undefined)
