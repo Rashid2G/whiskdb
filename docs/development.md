@@ -44,7 +44,7 @@ WhiskDB eliminates traditional client-database network boundaries by co-locating
 1. **Relational Query Engine**: In-memory SQLite C-amalgamation core supporting ANSI SQL, indexed scans, and cached prepared statements.
 2. **WASM Runtime Host**: Embeds `libwasmtime` to execute user-defined procedural Whisks with transactional savepoint isolation, gas/fuel metering, and memory protection.
 3. **Storage & Persistence**: Configurable Write-Ahead Logging (`whiskdb.wal`) with binary framing, CRC32 checksums, and atomic crash recovery paired with binary snapshots (`snapshot.whisk`).
-4. **Asynchronous Network Layer**: High-performance, non-blocking TCP communication powered by standalone **Asio** and **Boost.Beast**.
+4. **Asynchronous Network Layer**: High-performance, non-blocking TCP communication powered by standalone **Asio** with zero-copy length-prefixed binary framing *(WebSockets planned as future work)*.
 
 ---
 
@@ -96,7 +96,7 @@ All macros are orchestrated through `scripts/macro.sh`. To implement a new devel
 
 WhiskDB integrates focused external libraries for networking, data storage, serialization, and sandboxed bytecode execution:
 
-- **Asio** & **Boost.Beast**: Asynchronous networking, TCP session multiplexing, and WebSocket transport.
+- **Asio**: Standalone asynchronous networking, TCP session multiplexing, and zero-copy length-prefixed binary framing.
 - **SQLite3**: In-process SQL query compilation and relational table storage.
 - **libwasmtime**: Fast, sandboxed WebAssembly execution environment.
 - **toml++**: Configuration parsing (`config.toml`).
