@@ -1,15 +1,17 @@
 #include "common/types.hpp"
 #include "errors.hpp"
 
+#include <cctype>
 #include <chrono>
 #include <cstdio>
+#include <format>
 #include <iostream>
 #include <optional>
 #include <print>
 #include <string>
 #include <string_view>
-#include <vector>
 #include <unistd.h>
+#include <vector>
 
 #include "client/table_format.hpp"
 #include "client/whisk_client.hpp"
@@ -18,20 +20,30 @@ using namespace database;
 
 namespace {
 
+constexpr idx_t SHA256_SHORT_LEN = 12;
+
 void PrintUsage(std::FILE* out) {
-    std::println(out, "Usage: whisk [--host H] [--port P] <command> [args]");
+    std::println(out, "Usage: whisk [--host H] [--port P] [--json] <command> [args]");
     std::println(out, "");
     std::println(out, "Commands:");
-    std::println(out, "  repl              Start interactive REPL (default)");
-    std::println(out, "  ping              Ping server and print latency");
-    std::println(out, "  sql \"<query>\"     Execute SQL statement and display result table");
-    std::println(out, "  logs              Print server execution logs");
-    std::println(out, "  snapshot          Trigger server snapshot");
+    std::println(out, "  repl                                      Start interactive REPL (default)");
+    std::println(out, "  ping                                      Ping server and print latency");
+    std::println(out, "  sql \"<query>\"                             Execute SQL statement and display result table");
+    std::println(out, "  publish <module_name> <file.wasm>         Publish a WebAssembly Whisk module");
+    std::println(out, "  call <module> <func> [json_args]          Invoke a Whisk function (default args: \"{{}}\")");
+    std::println(out, "  list                                      List deployed Whisk modules");
+    std::println(out, "  logs [-n <limit> | --lines <limit>]       Print server execution logs (default: 200)");
+    std::println(out, "  snapshot                                  Trigger server snapshot");
     std::println(out, "");
     std::println(out, "Options:");
-    std::println(out, "  --host H          Server hostname or IP (default: 127.0.0.1)");
-    std::println(out, "  --port P          Server port (default: 8080)");
-    std::println(out, "  -h, --help        Show this help message");
+    std::println(out, "  --host H                                  Server hostname or IP (default: 127.0.0.1)");
+    std::println(out, "  --port P                                  Server port (default: 8080)");
+    std::println(out, "  --json                                    Output machine-readable JSON");
+    std::println(out, "  -h, --help                                Show this help message");
+}
+
+std::string_view ErrorText(const Error& err) {
+    return err.Message().empty() ? ToString(err.Code()) : err.Message();
 }
 
 std::optional<uint16_t> ParsePort(std::string_view s) {
@@ -54,12 +66,173 @@ std::optional<uint16_t> ParsePort(std::string_view s) {
     return static_cast<uint16_t>(val);
 }
 
+std::optional<idx_t> ParseLogLimit(std::string_view s) {
+    if (s.empty()) {
+        return std::nullopt;
+    }
+    uint64_t val = 0;
+    for (char c : s) {
+        if (c < '0' || c > '9') {
+            return std::nullopt;
+        }
+        val = val * 10 + static_cast<uint64_t>(c - '0');
+        if (val > LogsRequest::MAX_LIMIT) {
+            return std::nullopt;
+        }
+    }
+    if (val < LogsRequest::MIN_LIMIT) {
+        return std::nullopt;
+    }
+    return static_cast<idx_t>(val);
+}
+
+std::string ShortSha256(std::string_view sha) {
+    if (sha.size() > SHA256_SHORT_LEN) {
+        return std::string(sha.substr(0, SHA256_SHORT_LEN));
+    }
+    return std::string(sha);
+}
+
+std::string JoinStrings(const std::vector<std::string>& items, std::string_view sep) {
+    std::string out;
+    for (idx_t i = 0; i < items.size(); ++i) {
+        if (i > 0) {
+            out += sep;
+        }
+        out += items[i];
+    }
+    return out;
+}
+
+std::string FormatJsonStringArray(const std::vector<std::string>& items) {
+    std::string out = "[";
+    for (idx_t i = 0; i < items.size(); ++i) {
+        if (i > 0) {
+            out += ',';
+        }
+        out += '"';
+        out += EscapeJsonString(items[i]);
+        out += '"';
+    }
+    out += ']';
+    return out;
+}
+
+bool LooksLikeJsonValue(std::string_view s) {
+    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) {
+        s.remove_prefix(1);
+    }
+    if (s.empty()) {
+        return false;
+    }
+    char c = s.front();
+    return c == '{' || c == '[' || c == '"' || c == 't' || c == 'f' || c == 'n' || c == '-' ||
+           (c >= '0' && c <= '9');
+}
+
+void PrintPublishResult(const WhiskPublishResult& res, bool as_json) {
+    if (as_json) {
+        std::println("{{\"module_name\":\"{}\",\"version\":{},\"sha256\":\"{}\",\"exported_funcs\":{},\"exec_us\":{}}}",
+                     EscapeJsonString(res.module_name),
+                     res.version,
+                     EscapeJsonString(res.sha256),
+                     FormatJsonStringArray(res.exported_funcs),
+                     res.exec_us);
+        return;
+    }
+    std::string funcs = res.exported_funcs.empty() ? "(none)" : JoinStrings(res.exported_funcs, ", ");
+    std::println("Published module '{}' (v{}, sha256 {})",
+                 res.module_name,
+                 res.version,
+                 ShortSha256(res.sha256));
+    std::println("Functions: {}", funcs);
+    std::println("Run Time: {} us", res.exec_us);
+}
+
+void PrintCallResult(const WhiskCallResult& res, bool as_json) {
+    if (as_json) {
+        std::string result_field;
+        if (res.result_json.empty()) {
+            result_field = "null";
+        } else if (LooksLikeJsonValue(res.result_json)) {
+            result_field = res.result_json;
+        } else {
+            result_field = std::format("\"{}\"", EscapeJsonString(res.result_json));
+        }
+        std::println("{{\"result\":{},\"fuel_used\":{},\"exec_us\":{}}}",
+                     result_field,
+                     res.fuel_used,
+                     res.exec_us);
+        return;
+    }
+    std::println("{}", res.result_json);
+    std::println("Run Time: {} us | Fuel: {}", res.exec_us, res.fuel_used);
+}
+
+void PrintListResult(const WhiskListResult& res, bool as_json) {
+    if (as_json) {
+        std::string out = "{\"modules\":[";
+        for (idx_t i = 0; i < res.modules.size(); ++i) {
+            if (i > 0) {
+                out += ',';
+            }
+            const auto& m = res.modules[i];
+            out += std::format("{{\"name\":\"{}\",\"version\":{},\"sha256\":\"{}\",\"exported_funcs\":{},\"updated_at\":{}}}",
+                               EscapeJsonString(m.name),
+                               m.version,
+                               EscapeJsonString(m.sha256),
+                               FormatJsonStringArray(m.exported_funcs),
+                               m.updated_at);
+        }
+        out += std::format("],\"exec_us\":{}}}", res.exec_us);
+        std::println("{}", out);
+        return;
+    }
+
+    QueryResult qr;
+    qr.columns = {"name", "version", "sha256", "functions"};
+    qr.exec_us = res.exec_us;
+    qr.rows.reserve(res.modules.size());
+    for (const auto& m : res.modules) {
+        std::vector<Value> row;
+        row.reserve(4);
+        row.emplace_back(m.name);
+        row.emplace_back(std::format("v{}", m.version));
+        row.emplace_back(ShortSha256(m.sha256));
+        row.emplace_back(JoinStrings(m.exported_funcs, ", "));
+        qr.rows.push_back(std::move(row));
+    }
+    std::print("{}", FormatResultTable(qr));
+}
+
 void PrintReplError(std::string_view msg) {
     if (isatty(STDOUT_FILENO)) {
         std::println("\033[31merror: {}\033[0m", msg);
     } else {
         std::println("error: {}", msg);
     }
+}
+
+std::string_view TrimView(std::string_view sv) {
+    while (!sv.empty() && std::isspace(static_cast<unsigned char>(sv.front()))) {
+        sv.remove_prefix(1);
+    }
+    while (!sv.empty() && std::isspace(static_cast<unsigned char>(sv.back()))) {
+        sv.remove_suffix(1);
+    }
+    return sv;
+}
+
+std::string_view NextToken(std::string_view& sv) {
+    sv = TrimView(sv);
+    idx_t end = 0;
+    while (end < sv.size() && !std::isspace(static_cast<unsigned char>(sv[end]))) {
+        ++end;
+    }
+    std::string_view tok = sv.substr(0, end);
+    sv.remove_prefix(end);
+    sv = TrimView(sv);
+    return tok;
 }
 
 int RunRepl(WhiskClient& client) {
@@ -83,45 +256,93 @@ int RunRepl(WhiskClient& client) {
 
         // Check for dot commands if not in continuation
         if (!is_continuation) {
-            std::string_view sv = line;
-            while (!sv.empty() && std::isspace(static_cast<unsigned char>(sv.front()))) {
-                sv.remove_prefix(1);
-            }
-            while (!sv.empty() && std::isspace(static_cast<unsigned char>(sv.back()))) {
-                sv.remove_suffix(1);
-            }
+            std::string_view sv = TrimView(line);
 
             if (sv.starts_with('.')) {
-                if (sv == ".quit" || sv == ".exit") {
+                std::string_view rest = sv;
+                std::string_view cmd = NextToken(rest);
+
+                if (cmd == ".quit" || cmd == ".exit") {
                     break;
                 }
-                if (sv == ".help") {
+                if (cmd == ".help") {
                     std::println("Commands:");
-                    std::println("  .help       Show this help message");
-                    std::println("  .ping       Ping the server and measure round-trip time");
-                    std::println("  .logs       Print server logs");
-                    std::println("  .snapshot   Trigger server snapshot");
-                    std::println("  .quit       Exit the REPL");
-                    std::println("  .exit       Exit the REPL");
+                    std::println("  .help                                Show this help message");
+                    std::println("  .ping                                Ping the server and measure round-trip time");
+                    std::println("  .publish <module_name> <file.wasm>   Publish a WebAssembly Whisk module");
+                    std::println("  .call <module> <func> [json_args]    Invoke a Whisk function");
+                    std::println("  .list                                List deployed Whisk modules");
+                    std::println("  .logs [N]                            Print server logs (default: 200)");
+                    std::println("  .snapshot                            Trigger server snapshot");
+                    std::println("  .quit                                Exit the REPL");
+                    std::println("  .exit                                Exit the REPL");
                     continue;
                 }
-                if (sv == ".ping") {
+                if (cmd == ".ping") {
                     auto ping_res = client.Ping();
                     if (!ping_res) {
-                        PrintReplError(ping_res.error().Message().empty()
-                                           ? ToString(ping_res.error().Code())
-                                           : ping_res.error().Message());
+                        PrintReplError(ErrorText(ping_res.error()));
                     } else {
                         std::println("PONG in {} us", *ping_res);
                     }
                     continue;
                 }
-                if (sv == ".logs") {
-                    auto logs_res = client.GetLogs();
+                if (cmd == ".publish") {
+                    std::string_view mod_name = NextToken(rest);
+                    std::string_view file_path = rest;
+                    if (mod_name.empty() || file_path.empty()) {
+                        PrintReplError("usage: .publish <module_name> <file.wasm>");
+                        continue;
+                    }
+                    auto pub_res = client.PublishModuleFromFile(mod_name, std::string(file_path));
+                    if (!pub_res) {
+                        PrintReplError(ErrorText(pub_res.error()));
+                    } else {
+                        PrintPublishResult(*pub_res, false);
+                    }
+                    continue;
+                }
+                if (cmd == ".call") {
+                    std::string_view mod_name = NextToken(rest);
+                    std::string_view func_name = NextToken(rest);
+                    if (mod_name.empty() || func_name.empty()) {
+                        PrintReplError("usage: .call <module_name> <func_name> [json_args]");
+                        continue;
+                    }
+                    std::string_view args_json = rest.empty() ? std::string_view("{}") : rest;
+                    auto call_res = client.CallWhisk(mod_name, func_name, args_json);
+                    if (!call_res) {
+                        PrintReplError(ErrorText(call_res.error()));
+                    } else {
+                        PrintCallResult(*call_res, false);
+                    }
+                    continue;
+                }
+                if (cmd == ".list") {
+                    auto list_res = client.ListModules();
+                    if (!list_res) {
+                        PrintReplError(ErrorText(list_res.error()));
+                    } else {
+                        PrintListResult(*list_res, false);
+                    }
+                    continue;
+                }
+                if (cmd == ".logs") {
+                    idx_t limit = LogsRequest::DEFAULT_LIMIT;
+                    if (!rest.empty()) {
+                        auto parsed = ParseLogLimit(rest);
+                        if (!parsed) {
+                            PrintReplError(std::format("invalid log limit '{}' (expected {}-{})",
+                                                       rest,
+                                                       LogsRequest::MIN_LIMIT,
+                                                       LogsRequest::MAX_LIMIT));
+                            continue;
+                        }
+                        limit = *parsed;
+                    }
+                    auto logs_res = client.GetLogs(limit);
                     if (!logs_res) {
-                        PrintReplError(logs_res.error().Message().empty()
-                                           ? ToString(logs_res.error().Code())
-                                           : logs_res.error().Message());
+                        PrintReplError(ErrorText(logs_res.error()));
                     } else {
                         std::print("{}", *logs_res);
                         if (!logs_res->empty() && logs_res->back() != '\n') {
@@ -130,18 +351,16 @@ int RunRepl(WhiskClient& client) {
                     }
                     continue;
                 }
-                if (sv == ".snapshot") {
+                if (cmd == ".snapshot") {
                     auto snap_res = client.Snapshot();
                     if (!snap_res) {
-                        PrintReplError(snap_res.error().Message().empty()
-                                           ? ToString(snap_res.error().Code())
-                                           : snap_res.error().Message());
+                        PrintReplError(ErrorText(snap_res.error()));
                     } else {
                         std::println("{}", *snap_res);
                     }
                     continue;
                 }
-                PrintReplError(std::format("unknown command '{}'", sv));
+                PrintReplError(std::format("unknown command '{}'", cmd));
                 continue;
             }
         }
@@ -160,9 +379,7 @@ int RunRepl(WhiskClient& client) {
             auto end = std::chrono::steady_clock::now();
 
             if (!res) {
-                PrintReplError(res.error().Message().empty()
-                                   ? ToString(res.error().Code())
-                                   : res.error().Message());
+                PrintReplError(ErrorText(res.error()));
             } else {
                 std::print("{}", FormatResultTable(*res));
                 auto dur_us = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
@@ -190,6 +407,7 @@ int RunRepl(WhiskClient& client) {
 int main(int argc, char* argv[]) {
     std::string host = "127.0.0.1";
     uint16_t port = 8080;
+    bool output_json = false;
     std::string command;
     std::vector<std::string> command_args;
 
@@ -227,6 +445,8 @@ int main(int argc, char* argv[]) {
                 return 2;
             }
             port = *port_opt;
+        } else if (arg == "--json") {
+            output_json = true;
         } else if (arg == "-h" || arg == "--help") {
             PrintUsage(stdout);
             return 0;
@@ -251,20 +471,21 @@ int main(int argc, char* argv[]) {
     auto conn_res = client.Connect(host, port);
     if (!conn_res) {
         std::println(stderr, "error: failed to connect to {}:{}: {}", host, port,
-                     conn_res.error().Message().empty() ? ToString(conn_res.error().Code())
-                                                        : conn_res.error().Message());
+                     ErrorText(conn_res.error()));
         return 1;
     }
 
     if (command == "ping") {
         auto ping_res = client.Ping();
         if (!ping_res) {
-            std::println(stderr, "error: {}",
-                         ping_res.error().Message().empty() ? ToString(ping_res.error().Code())
-                                                            : ping_res.error().Message());
+            std::println(stderr, "error: {}", ErrorText(ping_res.error()));
             return 1;
         }
-        std::println("PONG in {} us", *ping_res);
+        if (output_json) {
+            std::println("{{\"pong\":true,\"latency_us\":{}}}", *ping_res);
+        } else {
+            std::println("PONG in {} us", *ping_res);
+        }
         return 0;
     }
 
@@ -274,30 +495,112 @@ int main(int argc, char* argv[]) {
             PrintUsage(stderr);
             return 2;
         }
-        std::string query;
-        for (idx_t k = 0; k < command_args.size(); ++k) {
-            if (k > 0) {
-                query += " ";
-            }
-            query += command_args[k];
-        }
+        std::string query = JoinStrings(command_args, " ");
         auto query_res = client.Query(query);
         if (!query_res) {
-            std::println(stderr, "error: {}",
-                         query_res.error().Message().empty() ? ToString(query_res.error().Code())
-                                                             : query_res.error().Message());
+            std::println(stderr, "error: {}", ErrorText(query_res.error()));
             return 1;
         }
-        std::print("{}", FormatResultTable(*query_res));
+        if (output_json) {
+            std::print("{}", FormatResultJson(*query_res));
+        } else {
+            std::print("{}", FormatResultTable(*query_res));
+        }
+        return 0;
+    }
+
+    if (command == "publish") {
+        if (command_args.size() != 2) {
+            std::println(stderr, "error: usage: whisk publish <module_name> <file.wasm>");
+            return 2;
+        }
+        auto pub_res = client.PublishModuleFromFile(command_args[0], command_args[1]);
+        if (!pub_res) {
+            std::println(stderr, "error: {}", ErrorText(pub_res.error()));
+            return 1;
+        }
+        PrintPublishResult(*pub_res, output_json);
+        return 0;
+    }
+
+    if (command == "call") {
+        if (command_args.size() < 2 || command_args.size() > 3) {
+            std::println(stderr, "error: usage: whisk call <module_name> <func_name> [json_args]");
+            return 2;
+        }
+        std::string_view args_json = command_args.size() == 3 ? std::string_view(command_args[2])
+                                                              : std::string_view("{}");
+        auto call_res = client.CallWhisk(command_args[0], command_args[1], args_json);
+        if (!call_res) {
+            std::println(stderr, "error: {}", ErrorText(call_res.error()));
+            return 1;
+        }
+        PrintCallResult(*call_res, output_json);
+        return 0;
+    }
+
+    if (command == "list") {
+        if (!command_args.empty()) {
+            std::println(stderr, "error: usage: whisk list");
+            return 2;
+        }
+        auto list_res = client.ListModules();
+        if (!list_res) {
+            std::println(stderr, "error: {}", ErrorText(list_res.error()));
+            return 1;
+        }
+        PrintListResult(*list_res, output_json);
         return 0;
     }
 
     if (command == "logs") {
-        auto logs_res = client.GetLogs();
+        idx_t limit = LogsRequest::DEFAULT_LIMIT;
+        for (idx_t k = 0; k < command_args.size(); ++k) {
+            std::string_view a = command_args[k];
+            if (a == "-n" || a == "--lines") {
+                if (k + 1 >= command_args.size()) {
+                    std::println(stderr, "error: {} requires an argument", a);
+                    return 2;
+                }
+                auto parsed = ParseLogLimit(command_args[++k]);
+                if (!parsed) {
+                    std::println(stderr, "error: invalid log limit '{}' (expected {}-{})",
+                                 command_args[k],
+                                 LogsRequest::MIN_LIMIT,
+                                 LogsRequest::MAX_LIMIT);
+                    return 2;
+                }
+                limit = *parsed;
+            } else if (a.starts_with("--lines=")) {
+                std::string_view val_sv = a.substr(8);
+                auto parsed = ParseLogLimit(val_sv);
+                if (!parsed) {
+                    std::println(stderr, "error: invalid log limit '{}' (expected {}-{})",
+                                 val_sv,
+                                 LogsRequest::MIN_LIMIT,
+                                 LogsRequest::MAX_LIMIT);
+                    return 2;
+                }
+                limit = *parsed;
+            } else if (a.starts_with("-n=")) {
+                std::string_view val_sv = a.substr(3);
+                auto parsed = ParseLogLimit(val_sv);
+                if (!parsed) {
+                    std::println(stderr, "error: invalid log limit '{}' (expected {}-{})",
+                                 val_sv,
+                                 LogsRequest::MIN_LIMIT,
+                                 LogsRequest::MAX_LIMIT);
+                    return 2;
+                }
+                limit = *parsed;
+            } else {
+                std::println(stderr, "error: unknown logs option '{}'", a);
+                return 2;
+            }
+        }
+        auto logs_res = client.GetLogs(limit);
         if (!logs_res) {
-            std::println(stderr, "error: {}",
-                         logs_res.error().Message().empty() ? ToString(logs_res.error().Code())
-                                                            : logs_res.error().Message());
+            std::println(stderr, "error: {}", ErrorText(logs_res.error()));
             return 1;
         }
         std::print("{}", *logs_res);
@@ -310,12 +613,14 @@ int main(int argc, char* argv[]) {
     if (command == "snapshot") {
         auto snap_res = client.Snapshot();
         if (!snap_res) {
-            std::println(stderr, "error: {}",
-                         snap_res.error().Message().empty() ? ToString(snap_res.error().Code())
-                                                            : snap_res.error().Message());
+            std::println(stderr, "error: {}", ErrorText(snap_res.error()));
             return 1;
         }
-        std::println("{}", *snap_res);
+        if (output_json) {
+            std::println("{{\"message\":\"{}\"}}", EscapeJsonString(*snap_res));
+        } else {
+            std::println("{}", *snap_res);
+        }
         return 0;
     }
 
