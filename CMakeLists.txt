@@ -9,7 +9,7 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
 endif()
 
-option(WHISKDB_SANITIZE "Enable UBSAN (and ASAN where supported)" OFF)
+option(WHISKDB_SANITIZE "Enable ASAN and UBSAN" OFF)
 
 # ---------------------------------------------------------------------------
 # Dependencies: check vcpkg/installed prefix first, fallback to FetchContent
@@ -122,8 +122,8 @@ target_compile_options(whiskdb_core PUBLIC -Wall -Wextra -Wpedantic)
 target_compile_definitions(whiskdb_core PRIVATE WHISKDB_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
 if(WHISKDB_SANITIZE)
-  target_compile_options(whiskdb_core PUBLIC -fsanitize=undefined -fno-sanitize-recover=undefined)
-  target_link_options(whiskdb_core PUBLIC -fsanitize=undefined)
+  target_compile_options(whiskdb_core PUBLIC -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined)
+  target_link_options(whiskdb_core PUBLIC -fsanitize=address,undefined)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -161,6 +161,11 @@ function(add_whisk_test test_name test_src)
       target_compile_definitions(${test_name} PRIVATE WHISKDB_WASM_CLANGXX="${WHISKDB_WASM_CLANGXX}")
     endif()
     add_test(NAME ${test_name} COMMAND ${test_name} WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+    if(WHISKDB_SANITIZE)
+      set_tests_properties(${test_name} PROPERTIES
+        ENVIRONMENT "ASAN_OPTIONS=handle_segv=0:allow_user_segv_handler=1:detect_leaks=1"
+      )
+    endif()
   endif()
 endfunction()
 
