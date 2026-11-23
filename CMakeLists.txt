@@ -161,6 +161,7 @@ add_whisk_test(test_config tests/test_config.cpp)
 add_whisk_test(test_wasm_runtime tests/test_wasm_runtime.cpp)
 add_whisk_test(test_guest_sdk tests/test_guest_sdk.cpp)
 add_whisk_test(test_wasm_lifecycle tests/test_wasm_lifecycle.cpp)
+add_whisk_test(test_whisk_transactions tests/test_whisk_transactions.cpp)
 
 file(GLOB WHISKDB_TESTS CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tests/test_*.cpp)
 foreach(test_src ${WHISKDB_TESTS})
