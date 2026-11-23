@@ -140,12 +140,18 @@ endforeach()
 # ---------------------------------------------------------------------------
 enable_testing()
 
+find_program(WHISKDB_WASM_CLANGXX NAMES clang++ PATHS "$ENV{HOME}/.whisk-tools/bin" /usr/bin /usr/local/bin)
+
 function(add_whisk_test test_name test_src)
   if(NOT TARGET ${test_name})
     add_executable(${test_name} ${test_src})
     target_link_libraries(${test_name} PRIVATE whiskdb_core)
     target_include_directories(${test_name} PRIVATE ${CMAKE_SOURCE_DIR}/tests)
     target_compile_options(${test_name} PRIVATE -UNDEBUG)
+    target_compile_definitions(${test_name} PRIVATE WHISKDB_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    if(WHISKDB_WASM_CLANGXX)
+      target_compile_definitions(${test_name} PRIVATE WHISKDB_WASM_CLANGXX="${WHISKDB_WASM_CLANGXX}")
+    endif()
     add_test(NAME ${test_name} COMMAND ${test_name} WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
   endif()
 endfunction()
@@ -153,6 +159,7 @@ endfunction()
 # Explicitly register core test suites via add_whisk_test
 add_whisk_test(test_config tests/test_config.cpp)
 add_whisk_test(test_wasm_runtime tests/test_wasm_runtime.cpp)
+add_whisk_test(test_guest_sdk tests/test_guest_sdk.cpp)
 
 file(GLOB WHISKDB_TESTS CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tests/test_*.cpp)
 foreach(test_src ${WHISKDB_TESTS})
