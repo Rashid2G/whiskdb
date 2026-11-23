@@ -5,6 +5,53 @@
 #include <stdint.h>
 
 // -----------------------------------------------------------------------------
+// Freestanding Memory Intrinsics for -nostdlib --target=wasm32
+// Marked visibility("hidden") so -Wl,--export-dynamic does not export them.
+// Volatile byte loops prevent LLVM loop-idiom recognition from self-recursing.
+// -----------------------------------------------------------------------------
+#ifdef __wasm__
+extern "C" {
+
+__attribute__((weak, visibility("hidden")))
+void* memcpy(void* dest, const void* src, size_t n) {
+    auto* d = static_cast<volatile uint8_t*>(dest);
+    const auto* s = static_cast<const uint8_t*>(src);
+    for (size_t i = 0; i < n; ++i) {
+        d[i] = s[i];
+    }
+    return dest;
+}
+
+__attribute__((weak, visibility("hidden")))
+void* memmove(void* dest, const void* src, size_t n) {
+    auto* d = static_cast<volatile uint8_t*>(dest);
+    const auto* s = static_cast<const uint8_t*>(src);
+    if (d < s) {
+        for (size_t i = 0; i < n; ++i) {
+            d[i] = s[i];
+        }
+    } else if (d > s) {
+        for (size_t i = n; i > 0; --i) {
+            d[i - 1] = s[i - 1];
+        }
+    }
+    return dest;
+}
+
+__attribute__((weak, visibility("hidden")))
+void* memset(void* dest, int c, size_t n) {
+    auto* d = static_cast<volatile uint8_t*>(dest);
+    uint8_t val = static_cast<uint8_t>(c);
+    for (size_t i = 0; i < n; ++i) {
+        d[i] = val;
+    }
+    return dest;
+}
+
+} // extern "C"
+#endif
+
+// -----------------------------------------------------------------------------
 // Host Imports (exact match to Whisk Host ABI in src/wasm/host_abi.cpp)
 // -----------------------------------------------------------------------------
 extern "C" {
