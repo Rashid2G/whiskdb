@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include <vector>
 
+#include "cli/dev_workflow.hpp"
 #include "client/table_format.hpp"
 #include "client/whisk_client.hpp"
 
@@ -26,6 +27,9 @@ void PrintUsage(std::FILE* out) {
     std::println(out, "Usage: whisk [--host H] [--port P] [--json] <command> [args]");
     std::println(out, "");
     std::println(out, "Commands:");
+    std::println(out, "  init <project_dir> [--force]              Scaffold a new local Whisk module project");
+    std::println(out, "  build [project_dir] [--sdk-include P]     Compile local Whisk project to WebAssembly");
+    std::println(out, "  test [project_dir] [--sdk-include P]      Run local Whisk tests in an ephemeral engine");
     std::println(out, "  repl                                      Start interactive REPL (default)");
     std::println(out, "  ping                                      Ping server and print latency");
     std::println(out, "  sql \"<query>\"                             Execute SQL statement and display result table");
@@ -465,6 +469,174 @@ int main(int argc, char* argv[]) {
 
     if (command.empty()) {
         command = "repl";
+    }
+
+    // Offline local developer workflow commands (no running whiskdb server required)
+    if (command == "init") {
+        std::string project_dir;
+        bool force = false;
+        for (idx_t k = 0; k < command_args.size(); ++k) {
+            std::string_view a = command_args[k];
+            if (a == "--force") {
+                force = true;
+            } else if (a == "--json") {
+                output_json = true;
+            } else if (a.starts_with("-")) {
+                std::println(stderr, "error: unknown init option '{}'", a);
+                return 2;
+            } else if (project_dir.empty()) {
+                project_dir = std::string(a);
+            } else {
+                std::println(stderr, "error: usage: whisk init <project_dir> [--force]");
+                return 2;
+            }
+        }
+        if (project_dir.empty()) {
+            std::println(stderr, "error: usage: whisk init <project_dir> [--force]");
+            return 2;
+        }
+        auto init_res = InitProject(project_dir, force);
+        if (!init_res) {
+            std::println(stderr, "error: {}", ErrorText(init_res.error()));
+            return 1;
+        }
+        if (output_json) {
+            std::println("{{\"module_name\":\"{}\",\"project_dir\":\"{}\",\"manifest\":\"{}\",\"entry\":\"{}\"}}",
+                         EscapeJsonString(init_res->module_name),
+                         EscapeJsonString(init_res->project_dir.string()),
+                         EscapeJsonString(init_res->manifest_path.string()),
+                         EscapeJsonString(init_res->entry_path.string()));
+        } else {
+            std::println("Initialized Whisk module '{}' in {}",
+                         init_res->module_name,
+                         init_res->project_dir.string());
+            std::println("  Manifest: {}", init_res->manifest_path.string());
+            std::println("  Entry:    {}", init_res->entry_path.string());
+        }
+        return 0;
+    }
+
+    if (command == "build") {
+        std::filesystem::path project_dir = ".";
+        bool has_dir = false;
+        std::optional<std::filesystem::path> sdk_include;
+        for (idx_t k = 0; k < command_args.size(); ++k) {
+            std::string_view a = command_args[k];
+            if (a == "--sdk-include") {
+                if (k + 1 >= command_args.size()) {
+                    std::println(stderr, "error: --sdk-include requires an argument");
+                    return 2;
+                }
+                sdk_include = std::filesystem::path(command_args[++k]);
+            } else if (a.starts_with("--sdk-include=")) {
+                sdk_include = std::filesystem::path(a.substr(14));
+            } else if (a == "--json") {
+                output_json = true;
+            } else if (a.starts_with("-")) {
+                std::println(stderr, "error: unknown build option '{}'", a);
+                return 2;
+            } else if (!has_dir) {
+                project_dir = std::filesystem::path(a);
+                has_dir = true;
+            } else {
+                std::println(stderr, "error: usage: whisk build [project_dir] [--sdk-include <path>]");
+                return 2;
+            }
+        }
+        auto build_res = BuildProject(project_dir, sdk_include);
+        if (!build_res) {
+            std::println(stderr, "error: {}", ErrorText(build_res.error()));
+            return 1;
+        }
+        if (output_json) {
+            std::println("{{\"module_name\":\"{}\",\"output\":\"{}\",\"binary_size\":{},\"exported_funcs\":{}}}",
+                         EscapeJsonString(build_res->module_name),
+                         EscapeJsonString(build_res->output_path.string()),
+                         build_res->binary_size,
+                         FormatJsonStringArray(build_res->exported_funcs));
+        } else {
+            std::println("Built module '{}' -> {} ({} bytes)",
+                         build_res->module_name,
+                         build_res->output_path.string(),
+                         build_res->binary_size);
+            std::println("Exports: {}",
+                         build_res->exported_funcs.empty() ? "(none)"
+                                                           : JoinStrings(build_res->exported_funcs, ", "));
+        }
+        return 0;
+    }
+
+    if (command == "test") {
+        std::filesystem::path project_dir = ".";
+        bool has_dir = false;
+        std::optional<std::filesystem::path> sdk_include;
+        for (idx_t k = 0; k < command_args.size(); ++k) {
+            std::string_view a = command_args[k];
+            if (a == "--sdk-include") {
+                if (k + 1 >= command_args.size()) {
+                    std::println(stderr, "error: --sdk-include requires an argument");
+                    return 2;
+                }
+                sdk_include = std::filesystem::path(command_args[++k]);
+            } else if (a.starts_with("--sdk-include=")) {
+                sdk_include = std::filesystem::path(a.substr(14));
+            } else if (a == "--json") {
+                output_json = true;
+            } else if (a.starts_with("-")) {
+                std::println(stderr, "error: unknown test option '{}'", a);
+                return 2;
+            } else if (!has_dir) {
+                project_dir = std::filesystem::path(a);
+                has_dir = true;
+            } else {
+                std::println(stderr, "error: usage: whisk test [project_dir] [--sdk-include <path>]");
+                return 2;
+            }
+        }
+        auto test_res = TestProject(project_dir, sdk_include);
+        if (!test_res) {
+            std::println(stderr, "error: {}", ErrorText(test_res.error()));
+            return 1;
+        }
+        if (output_json) {
+            std::string out = std::format(
+                "{{\"module_name\":\"{}\",\"total\":{},\"passed\":{},\"failed\":{},\"total_exec_us\":{},\"tests\":[",
+                EscapeJsonString(test_res->module_name),
+                test_res->total,
+                test_res->passed,
+                test_res->failed,
+                test_res->total_exec_us);
+            for (idx_t idx = 0; idx < test_res->results.size(); ++idx) {
+                if (idx > 0) {
+                    out += ',';
+                }
+                const auto& tc = test_res->results[idx];
+                out += std::format(
+                    "{{\"name\":\"{}\",\"passed\":{},\"exec_us\":{},\"fuel_used\":{},\"error\":\"{}\"}}",
+                    EscapeJsonString(tc.name),
+                    tc.passed ? "true" : "false",
+                    tc.exec_us,
+                    tc.fuel_used,
+                    EscapeJsonString(tc.error));
+            }
+            out += "]}";
+            std::println("{}", out);
+        } else {
+            for (const auto& tc : test_res->results) {
+                if (tc.passed) {
+                    std::println("[PASS] {} ({} us, {} fuel)", tc.name, tc.exec_us, tc.fuel_used);
+                } else {
+                    std::println("[FAIL] {}: {}", tc.name, tc.error);
+                }
+            }
+            std::println("Test Summary ({}): {}/{} passed, {} failed ({} us)",
+                         test_res->module_name,
+                         test_res->passed,
+                         test_res->total,
+                         test_res->failed,
+                         test_res->total_exec_us);
+        }
+        return test_res->failed == 0 ? 0 : 1;
     }
 
     WhiskClient client;
