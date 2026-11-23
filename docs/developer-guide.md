@@ -10,17 +10,16 @@ WhiskDB leverages external C++ libraries for low-level networking, protocols, st
 
 | Library | Component / Header | Purpose | Description |
 |---|---|---|---|
-| **[Asio](https://think-async.com/Asio/)** | `asio` (`#include <asio.hpp>`) | Asynchronous Network I/O | Standalone, non-blocking asynchronous I/O and event loop framework driving WhiskDB's client/server TCP communication and framing. |
+| **[Asio](https://think-async.com/Asio/)** | `asio` (`#include <asio.hpp>`) | Asynchronous Network I/O | Standalone, non-blocking asynchronous I/O and event loop framework driving WhiskDB's client/server TCP communication and zero-copy length-prefixed binary framing. |
 | **[SQLite3](https://www.sqlite.org/)** | `sqlite3` (`#include <sqlite3.h>`) | Relational Storage & SQL Engine | Embedded SQL engine compiled via C-amalgamation, responsible for B-tree index management, SQL dialect execution, and in-memory table structures. |
 | **[Wasmtime](https://wasmtime.dev/)** (`libwasmtime`) | `wasmtime` (`#include <wasmtime.h>`) | Sandboxed Bytecode Execution | High-performance, memory-safe WebAssembly runtime executing user-defined Whisk functions in-engine with near-instant instantiation and resource metering. |
 | **[toml++](https://marzer.github.io/tomlplusplus/)** (`tomlplusplus`) | `tomlplusplus` (`#include <toml++/toml.hpp>`) | Configuration Parsing | Header-only modern C++ library for loading, parsing, and validating TOML-based database configuration files (`config.toml`). |
-| **[Boost.Beast](https://www.boost.org/doc/libs/release/libs/beast/)** | `boost/beast` (`#include <boost/beast.hpp>`) | Networking & WebSocket | Provides HTTP and WebSocket protocol implementations built on top of **Boost.Asio**. Powers WhiskDB's client connection handling, real-time reactive subscriptions, and network communication layer. |
 
 ### Component Integration Details
 
 - **Asio**:
     - Standalone header-only integration (`ASIO_STANDALONE`) linked via `asio_headers`.
-    - Handles asynchronous socket read/write operations and connection lifecycle without runtime thread explosion.
+    - Handles asynchronous socket read/write operations, connection lifecycle, and zero-copy length-prefixed binary TCP framing without runtime thread explosion. *(WebSocket transport is planned as future work.)*
 - **SQLite3**:
     - Integrated as an amalgamation source build (`sqlite3.c`) compiled statically with `-DSQLITE_THREADSAFE=1 -DSQLITE_OMIT_LOAD_EXTENSION=1`.
     - Provides zero-copy in-memory execution and prepared statement caching.
@@ -29,9 +28,6 @@ WhiskDB leverages external C++ libraries for low-level networking, protocols, st
     - Enforces strict memory sandboxing, gas/fuel limiting, and transactional savepoints during module invocations.
 - **toml++ (`tomlplusplus`)**:
     - Modern C++23 header-only TOML library (`toml_headers`) for reading engine options, network bindings, and durability modes.
-- **Boost.Beast**:
-    - Managed via **vcpkg** (`vcpkg.json`) and linked in `CMakeLists.txt` via CMake's `find_package(Boost REQUIRED)`.
-    - Implements RFC 6455 WebSocket framing for real-time subscription streaming and binary message passing.
 
 ---
 
