@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <format>
 #include <string>
@@ -104,12 +105,52 @@ FormattedCell FormatCellValue(const Value& val) {
 
 } // namespace
 
+std::string EscapeJsonString(std::string_view s) {
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s) {
+        switch (c) {
+            case '"':
+                out += "\\\"";
+                break;
+            case '\\':
+                out += "\\\\";
+                break;
+            case '\b':
+                out += "\\b";
+                break;
+            case '\f':
+                out += "\\f";
+                break;
+            case '\n':
+                out += "\\n";
+                break;
+            case '\r':
+                out += "\\r";
+                break;
+            case '\t':
+                out += "\\t";
+                break;
+            default: {
+                auto uc = static_cast<uint8_t>(c);
+                if (uc < 0x20) {
+                    out += std::format("\\u{:04x}", uc);
+                } else {
+                    out += c;
+                }
+                break;
+            }
+        }
+    }
+    return out;
+}
+
 std::string FormatResultTable(const QueryResult& qr) {
     if (qr.columns.empty()) {
-        return std::format("OK, {} row(s) affected (last insert rowid {}) in {:.2f} ms\n",
+        return std::format("OK, {} row(s) affected (last insert rowid {}) | Run Time: {} us\n",
                            qr.rows_affected,
                            qr.last_insert_rowid,
-                           static_cast<double>(qr.exec_us) / 1000.0);
+                           qr.exec_us);
     }
 
     const idx_t num_cols = qr.columns.size();
@@ -183,9 +224,72 @@ std::string FormatResultTable(const QueryResult& qr) {
     if (!formatted_rows.empty()) {
         out += border;
     }
-    out += std::format("{} row(s) in {:.2f} ms\n",
+    out += std::format("{} row(s) | Run Time: {} us\n",
                        qr.rows.size(),
-                       static_cast<double>(qr.exec_us) / 1000.0);
+                       qr.exec_us);
+    return out;
+}
+
+std::string FormatResultJson(const QueryResult& qr) {
+    std::string out;
+    out += "{\"columns\":[";
+    for (idx_t c = 0; c < qr.columns.size(); ++c) {
+        if (c > 0) {
+            out += ',';
+        }
+        out += '"';
+        out += EscapeJsonString(qr.columns[c]);
+        out += '"';
+    }
+    out += "],\"rows\":[";
+    for (idx_t row_idx = 0; row_idx < qr.rows.size(); ++row_idx) {
+        if (row_idx > 0) {
+            out += ',';
+        }
+        out += '[';
+        const auto& row = qr.rows[row_idx];
+        const idx_t col_count = qr.columns.empty() ? row.size() : qr.columns.size();
+        for (idx_t col_idx = 0; col_idx < col_count; ++col_idx) {
+            if (col_idx > 0) {
+                out += ',';
+            }
+            if (col_idx >= row.size()) {
+                out += "null";
+                continue;
+            }
+            std::visit([&](const auto& v) {
+                using T = std::decay_t<decltype(v)>;
+                if constexpr (std::is_same_v<T, std::monostate>) {
+                    out += "null";
+                } else if constexpr (std::is_same_v<T, int64_t>) {
+                    out += std::to_string(v);
+                } else if constexpr (std::is_same_v<T, double>) {
+                    if (std::isfinite(v)) {
+                        char buf[64];
+                        std::snprintf(buf, sizeof(buf), "%.15g", v);
+                        out += buf;
+                    } else {
+                        out += "null";
+                    }
+                } else if constexpr (std::is_same_v<T, std::string>) {
+                    out += '"';
+                    out += EscapeJsonString(v);
+                    out += '"';
+                } else if constexpr (std::is_same_v<T, Blob>) {
+                    out += "\"x'";
+                    for (uint8_t byte : v) {
+                        out += std::format("{:02x}", byte);
+                    }
+                    out += "'\"";
+                }
+            }, row[col_idx]);
+        }
+        out += ']';
+    }
+    out += std::format("],\"rows_affected\":{},\"last_insert_rowid\":{},\"exec_us\":{}}}\n",
+                       qr.rows_affected,
+                       qr.last_insert_rowid,
+                       qr.exec_us);
     return out;
 }
 

@@ -2,6 +2,7 @@
 #include "sql/sql_types.hpp"
 
 #include <cassert>
+#include <limits>
 #include <print>
 #include <string>
 #include <vector>
@@ -12,23 +13,23 @@ void TestEmptyResult() {
     QueryResult qr;
     qr.columns = {"id", "name"};
     qr.rows = {};
-    qr.exec_us = 120; // 0.12 ms
+    qr.exec_us = 120;
 
     std::string table = FormatResultTable(qr);
     assert(table.find("+----+------+") != std::string::npos);
     assert(table.find("| id | name |") != std::string::npos);
-    assert(table.find("0 row(s) in 0.12 ms\n") != std::string::npos);
+    assert(table.find("0 row(s) | Run Time: 120 us\n") != std::string::npos);
 }
 
 void TestNullValues() {
     QueryResult qr;
     qr.columns = {"val"};
     qr.rows = {{std::monostate{}}};
-    qr.exec_us = 50; // 0.05 ms
+    qr.exec_us = 50;
 
     std::string table = FormatResultTable(qr);
     assert(table.find("| NULL |") != std::string::npos);
-    assert(table.find("1 row(s) in 0.05 ms\n") != std::string::npos);
+    assert(table.find("1 row(s) | Run Time: 50 us\n") != std::string::npos);
 }
 
 void TestMixedTypesAndAlignment() {
@@ -41,7 +42,7 @@ void TestMixedTypesAndAlignment() {
         std::string("hello"),
         Blob{0xde, 0xad, 0xbe, 0xef}
     }};
-    qr.exec_us = 1500; // 1.50 ms
+    qr.exec_us = 1500;
 
     std::string table = FormatResultTable(qr);
     // NULL is text-aligned (left)
@@ -55,7 +56,7 @@ void TestMixedTypesAndAlignment() {
     // blob
     assert(table.find("x'deadbeef'") != std::string::npos);
     // footer
-    assert(table.find("1 row(s) in 1.50 ms\n") != std::string::npos);
+    assert(table.find("1 row(s) | Run Time: 1500 us\n") != std::string::npos);
 }
 
 void TestWideAndLongCells() {
@@ -83,15 +84,11 @@ void TestWideAndLongCells() {
 
 void TestUnicodeWidths() {
     QueryResult qr;
-    // Header "AB" has 2 code points. "你好" has 2 code points (6 UTF-8 bytes).
-    // The column width should be 2, so the border segment is +----+ (2 + 2 = 4 dashes).
-    // If bytes were counted instead, column width would be 6, and border would have 8 dashes (+--------+).
     qr.columns = {"AB"};
-    qr.rows = {{"你好"}, {"Café"}}; // "Café" is 4 code points, 5 bytes. Column width becomes 4.
+    qr.rows = {{"你好"}, {"Café"}};
     qr.exec_us = 300;
 
     std::string table = FormatResultTable(qr);
-    // Column width is 4 (from Café). Border segment has 4 + 2 = 6 dashes (+------+).
     assert(table.find("+------+") != std::string::npos);
     assert(table.find("| AB   |") != std::string::npos);
     assert(table.find("| 你好   |") != std::string::npos);
@@ -104,11 +101,56 @@ void TestDmlFooter() {
     qr.rows = {};
     qr.rows_affected = 42;
     qr.last_insert_rowid = 1234;
-    qr.exec_us = 2500; // 2.50 ms
+    qr.exec_us = 2500;
     qr.is_mutation = true;
 
     std::string table = FormatResultTable(qr);
-    assert(table == "OK, 42 row(s) affected (last insert rowid 1234) in 2.50 ms\n");
+    assert(table == "OK, 42 row(s) affected (last insert rowid 1234) | Run Time: 2500 us\n");
+}
+
+void TestShortRowPadding() {
+    QueryResult qr;
+    qr.columns = {"a", "b"};
+    qr.rows = {{static_cast<int64_t>(7)}};
+    qr.exec_us = 10;
+
+    std::string table = FormatResultTable(qr);
+    assert(table.find("| 7 | NULL |") != std::string::npos);
+}
+
+void TestFormatResultJsonEmpty() {
+    QueryResult qr;
+    qr.columns = {"id", "name"};
+    qr.rows = {};
+    qr.rows_affected = 0;
+    qr.last_insert_rowid = 0;
+    qr.exec_us = 42;
+
+    std::string json = FormatResultJson(qr);
+    assert(json == "{\"columns\":[\"id\",\"name\"],\"rows\":[],\"rows_affected\":0,\"last_insert_rowid\":0,\"exec_us\":42}\n");
+}
+
+void TestFormatResultJsonTypesAndEscaping() {
+    QueryResult qr;
+    qr.columns = {"n", "i", "d", "nan_d", "t", "b"};
+    qr.rows = {{
+        std::monostate{},
+        static_cast<int64_t>(-99),
+        2.5,
+        std::numeric_limits<double>::quiet_NaN(),
+        std::string("a\"b\\c\nd\re\tf\x01"),
+        Blob{0xca, 0xfe}
+    }};
+    qr.rows_affected = 1;
+    qr.last_insert_rowid = 7;
+    qr.exec_us = 333;
+
+    std::string json = FormatResultJson(qr);
+    std::string expected =
+        "{\"columns\":[\"n\",\"i\",\"d\",\"nan_d\",\"t\",\"b\"],"
+        "\"rows\":[[null,-99,2.5,null,\"a\\\"b\\\\c\\nd\\re\\tf\\u0001\",\"x'cafe'\"]],"
+        "\"rows_affected\":1,\"last_insert_rowid\":7,\"exec_us\":333}\n";
+    assert(json == expected);
 }
 
 void TestSplitStatements() {
@@ -165,6 +207,9 @@ int main() {
     TestWideAndLongCells();
     TestUnicodeWidths();
     TestDmlFooter();
+    TestShortRowPadding();
+    TestFormatResultJsonEmpty();
+    TestFormatResultJsonTypesAndEscaping();
     TestSplitStatements();
 
     std::println("test_table_format: OK");

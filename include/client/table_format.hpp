@@ -5,13 +5,20 @@
 #include "sql/sql_types.hpp"
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace database {
 
+/// Escapes a string for safe inclusion inside a JSON string literal (without surrounding quotes).
+std::string EscapeJsonString(std::string_view s);
+
 /// Formats a QueryResult as an ASCII box-drawing table with header row, cell content,
 /// and timing footer, or as a DML status summary when no columns are present.
 std::string FormatResultTable(const QueryResult& qr);
+
+/// Formats a QueryResult as a single-line machine-readable JSON object.
+std::string FormatResultJson(const QueryResult& qr);
 
 /// Splits buffered input into complete ';'-terminated statements, respecting single-quoted
 /// strings with '' escapes and ignoring ';' inside them. Complete statements are returned,
