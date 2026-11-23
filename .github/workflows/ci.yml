@@ -6,9 +6,12 @@ on:
   pull_request:
     branches: [main, master, dev]
 
+env:
+  WASMTIME_VERSION: v50.0.1
+
 jobs:
   test:
-    name: Build & Test (Ubuntu 24.04 + Sanitizers)
+    name: Build & Test (Ubuntu 24.04 + WASM + ASAN/UBSAN)
     runs-on: ubuntu-24.04
 
     steps:
@@ -17,17 +20,36 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install Build Dependencies
+      - name: Install Build & WASM Toolchain Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build g++-14 libsqlite3-dev clang-tidy
+          sudo apt-get install -y cmake ninja-build g++-14 libsqlite3-dev clang lld clang-tidy
 
-      - name: Verify Clang-Tidy Configuration
+      - name: Cache Wasmtime C API
+        id: cache-wasmtime
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/wasmtime-${{ env.WASMTIME_VERSION }}
+          key: wasmtime-${{ env.WASMTIME_VERSION }}-x86_64-linux-c-api
+
+      - name: Download Wasmtime C API
+        if: steps.cache-wasmtime.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "${{ runner.temp }}/wasmtime-${{ env.WASMTIME_VERSION }}"
+          curl -fsSL "https://github.com/bytecodealliance/wasmtime/releases/download/${{ env.WASMTIME_VERSION }}/wasmtime-${{ env.WASMTIME_VERSION }}-x86_64-linux-c-api.tar.xz" \
+            | tar -xJ --strip-components=1 -C "${{ runner.temp }}/wasmtime-${{ env.WASMTIME_VERSION }}"
+
+      - name: Verify Clang-Tidy & WASM Toolchain
         run: |
           clang-tidy --version
           clang-tidy --dump-config
+          clang++ --target=wasm32 --version
+          echo 'extern "C" int add(int a, int b) { return a + b; }' \
+            | clang++ --target=wasm32 -O2 -nostdlib -Wl,--no-entry -Wl,--export-all -x c++ - -o /tmp/ci_smoke.wasm
+          ls -lh /tmp/ci_smoke.wasm
+          rm -f /tmp/ci_smoke.wasm
 
-      - name: Configure Debug Build with Sanitizers (ASAN / UBSAN)
+      - name: Configure Debug Build with Sanitizers (ASAN + UBSAN)
         env:
           CC: gcc-14
           CXX: g++-14
@@ -36,15 +58,18 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug \
             -DWHISKDB_SANITIZE=ON \
             -DCMAKE_C_COMPILER=gcc-14 \
-            -DCMAKE_CXX_COMPILER=g++-14
+            -DCMAKE_CXX_COMPILER=g++-14 \
+            -DWASMTIME_ROOT="${{ runner.temp }}/wasmtime-${{ env.WASMTIME_VERSION }}"
 
       - name: Build Debug Targets
         run: |
           cmake --build build/debug -j$(nproc)
 
-      - name: Run CTest Test Suite
+      - name: Run CTest Test Suite (ASAN + UBSAN)
+        env:
+          ASAN_OPTIONS: handle_segv=0:allow_user_segv_handler=1:detect_leaks=1
         run: |
-          ctest --test-dir build/debug --output-on-failure --timeout 120
+          ctest --test-dir build/debug --output-on-failure --timeout 180
 
       - name: Configure Release Build
         env:
@@ -54,14 +79,37 @@ jobs:
           cmake -S . -B build/release -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER=gcc-14 \
-            -DCMAKE_CXX_COMPILER=g++-14
+            -DCMAKE_CXX_COMPILER=g++-14 \
+            -DWASMTIME_ROOT="${{ runner.temp }}/wasmtime-${{ env.WASMTIME_VERSION }}"
 
       - name: Build Release Targets
         run: |
           cmake --build build/release -j$(nproc)
 
-      - name: Verify Executables Smoke Test
+      - name: Verify Executables & Benchmark Smoke Tests
         run: |
           ./build/release/whisk --help
           ./build/release/whiskdb --help
           ./build/release/whisk_bench --quick --mode memory_only
+          ./build/release/whisk_bench --colocation --iterations 100
+
+  docs:
+    name: Docs Build (MkDocs Strict)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install MkDocs
+        run: |
+          pip install mkdocs mkdocs-material
+
+      - name: Build Docs (Strict)
+        run: |
+          mkdocs build --strict
