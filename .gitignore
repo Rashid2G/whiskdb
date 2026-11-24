@@ -1,6 +1,9 @@
-# Internal planning & notes (keep local, do not publish)
+# Internal planning, notes & local agent config (keep local, do not publish)
 plan.md
 *.plan.md
+AGENTS.md
+.agents/
+.opencode/
 
 # Developer tooling & compilation database
 compile_commands.json
