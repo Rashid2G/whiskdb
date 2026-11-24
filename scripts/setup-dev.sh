@@ -391,15 +391,15 @@ verify_build_and_tests() {
   if [ "$SKIP_BUILD" = "true" ]; then
     echo "==> Skipping build verification (--skip-build requested)."
   else
-    echo "==> Running verification build (cmake build-debug)..."
-    cmake build-debug
+    echo "==> Running verification build (scripts/macro.sh build-debug)..."
+    "$REPO_ROOT/scripts/macro.sh" build-debug
   fi
 
   if [ "$SKIP_TESTS" = "true" ]; then
     echo "==> Skipping test suite verification (--skip-tests requested)."
   else
-    echo "==> Running verification test suite (cmake run-tests)..."
-    cmake run-tests
+    echo "==> Running verification test suite (scripts/macro.sh run-tests)..."
+    "$REPO_ROOT/scripts/macro.sh" run-tests
   fi
 }
 

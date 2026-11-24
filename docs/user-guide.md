@@ -1,95 +1,108 @@
 # User Guide
 
-WhiskDB provides a unified command-line tool, `whisk`, for interacting with the database engine, managing WebAssembly Whisk modules, executing SQL queries, and administering the database.
+This guide covers running the `whiskdb` server, configuring durability, using the `whisk` CLI and REPL, and writing WebAssembly Whisk modules.
 
 ---
 
-## Command-Line Interface (CLI)
+## Running the Server (`whiskdb`)
 
-The `whisk` binary connects to a running WhiskDB server instance via TCP.
+Start the database server with defaults from `config.toml` or override settings via CLI flags:
+
+```bash
+whiskdb [--config <file>] [--data-dir <dir>] [--host <ip>] [--port <n>] [--durability <mode>]
+```
+
+| Flag | Default (`config.toml`) | Description |
+|---|---|---|
+| `--config <file>` | `config.toml` | Path to the TOML configuration file. |
+| `--data-dir <dir>` | `./data` | Directory for `whiskdb.wal` and `snapshot.whisk`. |
+| `--host <ip>` | `0.0.0.0` | Listen address. |
+| `--port <n>` | `8080` | TCP listen port. |
+| `--durability <mode>` | `group_commit` | Durability mode (`strict`, `group_commit`, `relaxed`, `memory_only`). |
+
+### Configuration (`config.toml`)
+
+```toml
+[config]
+host = "0.0.0.0"
+port = 8080
+data_dir = "./data"
+page_size = 4096
+
+# Durability mode: strict | group_commit | relaxed | memory_only
+durability_mode = "group_commit"
+
+# Group commit batching interval in milliseconds
+wal_group_commit_ms = 10
+
+# Snapshot + reset WAL after this many WAL records (0 = never)
+checkpoint_wal_records = 100000
+
+# WebAssembly (WASM) execution limits
+wasm_max_fuel = 100000000
+wasm_max_memory_mb = 64
+```
+
+### Durability Modes
+
+| Mode | Aliases | Disk Sync Strategy | Use Case |
+|---|---|---|---|
+| `strict` | `sync` | Synchronous `fdatasync` on every committed write. | Financial ledgers and zero-data-loss workloads. |
+| `group_commit` *(default)* | `batched` | Buffers WAL records and flushes periodically via batched `fdatasync`. | Balanced production throughput and durability. |
+| `relaxed` | `async` | Writes WAL records to the OS page cache without blocking on `fdatasync`. | Low-latency writes that survive process crashes. |
+| `memory_only` | `ephemeral` | Purely in-memory; WAL disabled. | Local tests (`whisk test`) and compute benchmarks. |
+
+---
+
+## Command-Line Interface (`whisk`)
+
+The `whisk` CLI connects to a running `whiskdb` server over TCP and also provides offline commands (`init`, `build`, `test`) for local module development.
 
 ### Global Options
 
-These options apply across CLI commands and REPL sessions:
+| Option | Default | Description |
+|---|---|---|
+| `--host <H>` | `127.0.0.1` | Server hostname or IPv4 address. |
+| `--port <P>` | `8080` | Server TCP port. |
+| `--json` | `false` | Emit machine-readable JSON output. |
+| `-h`, `--help` | — | Display usage information. |
 
-| Option | Flag Format | Default | Description |
-|---|---|---|---|
-| **Host** | `--host <H>` or `--host=<H>` | `127.0.0.1` | WhiskDB server hostname or IPv4 address. |
-| **Port** | `--port <P>` or `--port=<P>` | `8080` | WhiskDB server listening port. |
-| **JSON Output** | `--json` | `false` | Emit machine-readable JSON output for scripting and automation. |
-| **Help** | `-h`, `--help` | — | Display CLI usage information and available commands. |
-
----
-
-### Command Reference
-
-The table below outlines all primary `whisk` commands:
+### Commands
 
 | Command | Usage Example | Description |
 |---|---|---|
-| `whisk init` | `whisk init my_service` | Scaffolds a new C++ Whisk module project with template source code (`whisk_guest.hpp`) and build scripts. |
-| `whisk build` | `whisk build` | Compiles C++ Whisk module sources into deterministic WebAssembly (`.wasm`) bytecode. |
-| `whisk test` | `whisk test` | Executes Whisks locally against an ephemeral in-memory (`:memory:`) WhiskDB instance before publishing. |
-| `whisk publish` | `whisk publish auth build/auth.wasm` | Deploys and hot-reloads `.wasm` bytecode modules onto the host database, running `__init__` / `__update__` hooks atomically. |
-| `whisk call` | `whisk call auth login '{"user":"alice"}'` | Invokes a registered Whisk function transactionally with optional JSON parameters. |
-| `whisk list` | `whisk list` | Lists all published Whisk modules and their exported functions. |
-| `whisk sql` | `whisk sql "SELECT id, name FROM users;"` | Executes a SQL statement over the connection and displays the result table. |
-| `whisk logs` | `whisk logs [-n N]` | Retrieves the latest `N` structured in-memory execution and diagnostic logs from the server. |
-| `whisk snapshot` | `whisk snapshot` | Triggers a manual snapshot checkpoint, flushing state to `snapshot.whisk`. |
-| `whisk ping` | `whisk ping` | Measures connection round-trip latency (`PONG in <us>`). |
-| `whisk repl` | `whisk` or `whisk repl` | Launches an interactive command and SQL REPL shell (default command when invoked without arguments). |
+| `init` | `whisk init my_service` | Scaffold a new C++ Whisk module project (`whisk_guest.hpp` + build script). |
+| `build` | `whisk build [dir]` | Compile a local Whisk project into `.wasm` bytecode. |
+| `test` | `whisk test [dir]` | Run Whisk tests locally against an ephemeral in-memory engine. |
+| `publish` | `whisk publish auth build/auth.wasm` | Deploy or hot-reload a `.wasm` module (runs `__init__` / `__update__` atomically). |
+| `call` | `whisk call auth login '{"user":"alice"}'` | Invoke an exported Whisk function transactionally with optional JSON args. |
+| `list` | `whisk list` | List published modules and their exported functions. |
+| `sql` | `whisk sql "SELECT id, name FROM users;"` | Execute a SQL statement and print the result table. |
+| `logs` | `whisk logs [-n N]` | Print the latest `N` server execution logs (default: 200). |
+| `snapshot` | `whisk snapshot` | Trigger a manual snapshot checkpoint (`snapshot.whisk`). |
+| `ping` | `whisk ping` | Measure server round-trip latency (`PONG in <us>`). |
+| `repl` | `whisk` or `whisk repl` | Open the interactive SQL and admin shell (default when no command is given). |
 
-#### CLI Usage Examples
+#### Examples
 
-**Execute an ad-hoc SQL query:**
 ```bash
-whisk --host 127.0.0.1 --port 8080 sql "SELECT id, username, email FROM accounts WHERE active = 1;"
-```
+# Execute an ad-hoc SQL query
+whisk --host 127.0.0.1 --port 8080 sql "SELECT id, username FROM accounts WHERE active = 1;"
 
-**Check server connectivity and latency:**
-```bash
+# Check server connectivity and latency
 whisk ping
-# Output: PONG in 312 us
-```
 
-**Fetch recent server diagnostic logs:**
-```bash
-whisk logs
+# Fetch recent server logs
+whisk logs -n 50
 ```
 
 ---
 
-## Interactive REPL Shell
+## Interactive REPL
 
-Starting `whisk` without arguments (or running `whisk repl`) opens the interactive database shell:
-
-```text
-whisk> 
-```
-
-### REPL Features
-- **Interactive SQL**: Enter SQL queries terminated by `;`. Multi-line input is supported automatically (`...> ` prompt).
-- **Execution Timing**: Each query displays execution duration in milliseconds along with formatted tabular output.
-- **Dot-Commands**: Administrative and diagnostic commands prefixed with `.` execute immediately.
-
-### Dot-Commands Reference
-
-| Dot-Command | Purpose | Description |
-|---|---|---|
-| `.publish <name> <file.wasm>` | Publish Module | Uploads and hot-reloads a `.wasm` Whisk module on the server. |
-| `.call <mod> <fn> [json]` | Invoke Whisk | Executes a published Whisk function transactionally with optional JSON arguments. |
-| `.list` | List Modules | Displays all registered Whisk modules and their exported functions. |
-| `.tables` | List Tables | Queries and displays all user-defined relational tables in the active schema. |
-| `.logs [N]` | View Logs | Prints the latest `N` server diagnostic logs directly into the terminal. |
-| `.snapshot` | Trigger Snapshot | Triggers a manual WAL checkpoint and persists an in-memory snapshot to disk. |
-| `.ping` | Ping Server | Tests connection health and displays round-trip network time in microseconds. |
-| `.help` | Show Help | Displays the list of available REPL dot-commands. |
-| `.quit`, `.exit` | Exit REPL | Closes the client connection and exits the shell session. |
-
-#### REPL Session Example
+Running `whisk` with no command opens an interactive shell:
 
 ```text
-$ whisk
 whisk> CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT, price REAL);
 [OK] (round trip 0.85 ms)
 whisk> INSERT INTO items VALUES (1, 'Widget', 19.99), (2, 'Gadget', 49.50);
@@ -104,16 +117,28 @@ whisk> SELECT * FROM items;
 (round trip 0.94 ms)
 whisk> .ping
 PONG in 280 us
-whisk> .snapshot
-Snapshot created: 2 tables, 1420 bytes
 whisk> .quit
 ```
+
+Terminate SQL statements with `;` (multi-line statements continue with `...> `). Administrative dot-commands run immediately:
+
+| Dot-Command | Description |
+|---|---|
+| `.publish <name> <file.wasm>` | Upload and hot-reload a `.wasm` Whisk module. |
+| `.call <mod> <fn> [json]` | Invoke a published Whisk function transactionally. |
+| `.list` | List registered Whisk modules and exported functions. |
+| `.tables` | List user-defined tables in the database. |
+| `.logs [N]` | Print the latest `N` server logs. |
+| `.snapshot` | Trigger a manual WAL checkpoint and snapshot. |
+| `.ping` | Measure server round-trip latency. |
+| `.help` | Show available dot-commands. |
+| `.quit`, `.exit` | Disconnect and exit the REPL. |
 
 ---
 
 ## Writing a Whisk Module (`whisk_guest.hpp`)
 
-Whisks are freestanding C++23 functions compiled to WebAssembly (`wasm32`) using the header-only `sdk/whisk_guest.hpp` SDK:
+Whisks are freestanding C++23 functions compiled to `wasm32` using the header-only `include/sdk/whisk_guest.hpp` SDK:
 
 ```cpp
 #include "whisk_guest.hpp"
@@ -128,24 +153,23 @@ WHISK_INIT() {
 WHISK_FUNC(increment) {
     int64_t id = whisk::JsonGetIntOr(WHISK_ARGS(), "id", 1);
     whisk::Buf<64> params;
-    params.append_char('['); params.append_int(id); params.append_char(']');
+    params.append_char('[');
+    params.append_int(id);
+    params.append_char(']');
     whisk::Exec("INSERT INTO counters (id, val) VALUES (?1, 1) "
                 "ON CONFLICT(id) DO UPDATE SET val = val + 1;", params.view());
     return whisk::Ok("{\"status\":\"incremented\"}");
 }
 ```
 
-Build, publish, and invoke:
+Build, test, publish, and invoke:
+
 ```bash
 whisk init counter && cd counter
 whisk build
+whisk test
 whisk publish counter build/counter.wasm
 whisk call counter increment '{"id":1}'
 ```
 
----
-
-## Further Reading
-
-- [Project Development Overview](development.md)
-- [Developer Guide & Architecture](developer-guide.md)
+Complete reference modules are available in `examples/` (`counter_whisk.cpp`, `inventory_whisk.cpp`, and `ledger_whisk.cpp`).

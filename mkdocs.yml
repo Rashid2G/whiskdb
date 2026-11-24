@@ -1,5 +1,5 @@
 site_name: WhiskDB
-site_description: Database with Superpowers — In-Engine Code Execution with Real-Time Persistence
+site_description: In-memory relational database with co-located WebAssembly execution and configurable WAL persistence
 site_author: WhiskDB Team
 repo_url: https://github.com/Rashid2G/whiskdb
 repo_name: Rashid2G/whiskdb
@@ -18,6 +18,6 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - User Guide: user-guide.md
   - Development: development.md
   - Developer Guide: developer-guide.md
-  - User Guide: user-guide.md
