@@ -1,8 +1,0 @@
-{
-  "name": "whiskdb",
-  "version-string": "0.0.1",
-  "dependencies": [
-    "asio",
-    "tomlplusplus"
-  ]
-}

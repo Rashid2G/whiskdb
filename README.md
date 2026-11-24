@@ -1,43 +1,52 @@
 # WhiskDB
 
-> Database with Superpowers — In-Engine WebAssembly Execution with Real-Time Persistence.
+> In-memory relational database with co-located WebAssembly execution and configurable WAL persistence.
 
-WhiskDB is a high-performance, in-memory relational database and WebAssembly application host written in **C++23** for Linux `x86_64`. Inspired by **SpacetimeDB**, **Convex**, and **DuckDB**, WhiskDB co-locates relational data (in-memory SQLite3) and sandboxed server-side functions (**Whisks** via `libwasmtime`) in the same memory space.
+WhiskDB is an in-memory relational database and WebAssembly application host written in **C++23** for Linux `x86_64`. It pairs an in-memory SQLite3 engine with sandboxed server-side WebAssembly functions (**Whisks**, powered by `libwasmtime`) in the same memory space.
 
 ---
 
-## Architecture Overview
+## Key Features
 
-- **Relational Query Engine**: In-memory SQLite3 C-amalgamation core with prepared statement caching and ANSI SQL support.
-- **Sandboxed WASM Runtime**: Pre-compiled `libwasmtime` modules with per-invocation `SAVEPOINT` ACID rollback, memory isolation, and fuel metering.
-- **Zero-Copy TCP Networking**: Standalone **Asio** with length-prefixed binary TCP framing (WebSockets planned as future work).
+- **In-Memory SQL Engine**: Embedded SQLite3 C-amalgamation core with ANSI SQL support and prepared statement caching.
+- **Sandboxed WASM Functions (Whisks)**: Pre-compiled `libwasmtime` modules with memory isolation, fuel metering, and automatic per-call `SAVEPOINT` rollback on error or trap.
+- **Binary TCP Protocol**: Standalone **Asio** server and `whisk` CLI/REPL using length-prefixed binary framing.
 - **Configurable Durability**: Four modes (`strict`, `group_commit`, `relaxed`, `memory_only`) backed by CRC32-verified Write-Ahead Logging (`whiskdb.wal`) and binary snapshots (`snapshot.whisk`).
 
 ---
 
 ## Quickstart
 
-### 1. Build WhiskDB
+### 1. Setup & Build
+
 ```bash
-./scripts/setup-dev.sh          # Install toolchains (Clang, Wasmtime, Ninja)
-cmake build-release             # Compile whiskdb, whisk CLI, and whisk_bench
+./scripts/setup-dev.sh            # Install toolchain (Clang, Ninja, Wasmtime) on Ubuntu 24.04+ / Debian 13
+./scripts/macro.sh build-release  # Build whiskdb, whisk, and whisk_bench (or: cmake --workflow --preset build-release)
 ```
 
 ### 2. Run the End-to-End Demo
+
 ```bash
-bash scripts/demo.sh            # Non-interactive walkthrough (pass --interactive to pause)
+bash scripts/demo.sh              # Non-interactive walkthrough (pass --interactive to pause between steps)
 ```
 
-### 3. Manual Server & CLI
+### 3. Run Server & CLI Manually
+
 ```bash
-# Start the server
+# Start the server (configured via config.toml or CLI flags)
 ./build/release/whiskdb --host 127.0.0.1 --port 8080 --data-dir ./data --durability group_commit
 
-# Interact via the whisk CLI
+# Query and manage modules with the whisk CLI
 ./build/release/whisk ping
 ./build/release/whisk sql "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);"
-./build/release/whisk init my_service && cd my_service && ../build/release/whisk build
+
+# Scaffold, build, and test a local Whisk module
+./build/release/whisk init my_service
+./build/release/whisk build my_service
+./build/release/whisk test my_service
 ```
+
+See [`examples/`](examples/) for complete Whisk modules (`counter_whisk.cpp`, `inventory_whisk.cpp`, `ledger_whisk.cpp`).
 
 ---
 
@@ -64,10 +73,11 @@ Measured on Linux `x86_64` using Release builds (`./build/release/whisk_bench`):
 
 ## Documentation
 
-Full documentation is built with MkDocs (`docs/`):
-- [User Guide](docs/user-guide.md) — `whisk` CLI, REPL dot-commands, and `whisk_guest.hpp` quickstart.
-- [Project Development](docs/development.md) — Architecture, durability modes, and build macros.
-- [Developer Guide](docs/developer-guide.md) — Coding standards, external libraries, and Git workflow.
+Documentation lives in [`docs/`](docs/) and can be served locally with MkDocs:
+
+- [User Guide](docs/user-guide.md) — Server configuration, durability modes, `whisk` CLI, REPL, and writing Whisks.
+- [Development](docs/development.md) — Architecture, building from source, testing, and repository layout.
+- [Developer Guide](docs/developer-guide.md) — C++23 coding standards, error handling, and contributing.
 
 ```bash
 pip install mkdocs
@@ -76,9 +86,8 @@ mkdocs serve
 
 ---
 
-## Team
+## Authors
 
-Senior Capstone Project (YZL 400) at **OSTİM Technical University**:
 - **Abdullah Al Tamsha**
 - **Ibrahim Jamil Karaja**
 - **Rashid Alkatheri**

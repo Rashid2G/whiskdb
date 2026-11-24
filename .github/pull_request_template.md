@@ -8,19 +8,17 @@
 Closes #<N>
 
 ## Verification & Test Evidence
-<!-- Provide exact command outputs or verification evidence. Real numbers only; no estimates. -->
-- `cmake build-debug` (0 compiler warnings)
-- `cmake run-tests` (all test suites passing)
+<!-- Provide exact command outputs or verification evidence. -->
+- `./scripts/macro.sh build-debug` (0 compiler warnings)
+- `./scripts/macro.sh run-tests` (all test suites passing)
 
 ```text
 <!-- Paste ctest or benchmark output here -->
 ```
 
-## Developer Guide Checklist
-Before submitting a PR for review, verify all items below:
-- [ ] Code follows our C++ style and naming conventions (passes `clang-tidy`).
-- [ ] Code compiles warning-free via `cmake build-debug`.
-- [ ] All tests pass cleanly via `cmake run-tests`.
-- [ ] Assertions use `D_ASSERT` with explanatory comments.
-- [ ] PR targets `dev` and references `Closes #<N>`.
-- [ ] Any AI-assisted code has been fully reviewed, understood, and tested.
+## Checklist
+- [ ] Code follows WhiskDB C++23 style and naming conventions (`clang-tidy`).
+- [ ] Code compiles warning-free (`-Wall -Wextra -Wpedantic`).
+- [ ] All tests pass cleanly via `./scripts/macro.sh run-tests`.
+- [ ] Documentation updated in `docs/` when behavior, config, or CLI changed.
+- [ ] PR targets `dev` and links the relevant issue.

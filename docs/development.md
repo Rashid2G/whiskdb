@@ -1,19 +1,19 @@
-# Project Development
+# Development
 
-This page outlines the architectural foundation, durability strategies, and development macro workflows of WhiskDB.
+This page covers WhiskDB's architecture, dependencies, build and test commands, and repository layout.
 
 ---
 
 ## Architecture Overview
 
-WhiskDB eliminates traditional client-database network boundaries by co-locating server-side application logic and relational state within the same memory space.
+WhiskDB co-locates relational storage and sandboxed WebAssembly execution inside a single server process:
 
-```
+```text
                       +---------------------------------------+
                       |               Whisk CLI               |
                       |        (whisk sql, repl, call)        |
                       +-------------------+-------------------+
-                                          | TCP Framing (Asio)
+                                          | Binary TCP Framing (Asio)
                       +-------------------v-------------------+
                       |             WhiskDB Core              |
                       |                                       |
@@ -21,7 +21,7 @@ WhiskDB eliminates traditional client-database network boundaries by co-locating
                       |  |      In-Memory SQLite Core      |  |
                       |  |  (Relational Storage & Queries) |  |
                       |  +----------------+----------------+  |
-                      |                   | Shared Memory     |
+                      |                   | In-Process ABI    |
                       |  +----------------v----------------+  |
                       |  |      WASM Guest Runtime         |  |
                       |  |   (Sandboxed Whisk Functions)   |  |
@@ -39,66 +39,74 @@ WhiskDB eliminates traditional client-database network boundaries by co-locating
                                +---------------------+
 ```
 
-### Key Subsystems
+### Subsystems
 
-1. **Relational Query Engine**: In-memory SQLite C-amalgamation core supporting ANSI SQL, indexed scans, and cached prepared statements.
-2. **WASM Runtime Host**: Embeds `libwasmtime` to execute user-defined procedural Whisks with transactional savepoint isolation, gas/fuel metering, and memory protection.
-3. **Storage & Persistence**: Configurable Write-Ahead Logging (`whiskdb.wal`) with binary framing, CRC32 checksums, and atomic crash recovery paired with binary snapshots (`snapshot.whisk`).
-4. **Asynchronous Network Layer**: High-performance, non-blocking TCP communication powered by standalone **Asio** with zero-copy length-prefixed binary framing *(WebSockets planned as future work)*.
-
----
-
-## Durability Modes
-
-WhiskDB provides four durability levels to balance latency against persistence requirements. The mode can be configured in `config.toml` (`durability_mode`) or per-session:
-
-| Durability Mode | Config Aliases | Disk Sync Strategy | Crash Recovery Guarantee | Primary Use Case |
-|---|---|---|---|---|
-| **`MemoryOnly`** | `memory_only`, `ephemeral` | No disk I/O; purely in-memory execution. | None. State is lost upon process termination. | Unit testing (`whisk test`), staging sandboxes, and raw compute benchmarks. |
-| **`AsyncWal`** | `relaxed`, `async` | Appends WAL records to OS page cache without blocking on `fdatasync`. | Survives process crashes. Risk of small data loss window on power failure or OS crash. | High-frequency logging, telemetry, and sub-10µs write overhead workloads. |
-| **`SyncWalPerBatch`** *(Default)* | `group_commit`, `batched` | Appends to WAL ring buffer and periodically flushes via batched `fdatasync`. | Zero data loss for all acknowledged batch flushes. | Production workloads requiring optimal balance of SpacetimeDB-grade throughput and durability. |
-| **`SyncWalPerTx`** | `strict`, `sync` | Issues synchronous `fdatasync` before acknowledging each transaction. | Complete durability against power failure, OS kernel panic, or hardware failure. | Financial ledgers, mission-critical mutations, and strict compliance systems. |
+- **Relational Engine (`src/sql/`)**: In-memory SQLite3 C-amalgamation core with prepared statement caching, savepoint guards, and system catalog tables (`_whisk_modules`, `_whisk_migrations`).
+- **WASM Runtime (`src/wasm/`)**: `libwasmtime` host with pre-compiled module caching, fuel metering, memory limits, and transactional host ABI imports (`whisk_db_*`).
+- **Storage & Persistence (`src/storage/`)**: Binary WAL (`whiskdb.wal`) with CRC32 checksums, configurable durability modes, and point-in-time snapshots (`snapshot.whisk`).
+- **Networking (`src/network/`)**: Standalone Asio non-blocking TCP server and client with length-prefixed binary framing.
+- **CLI & SDK (`app/`, `src/cli/`, `include/sdk/`)**: The `whiskdb` server, `whisk` CLI/REPL, `whisk_bench` benchmark harness, and header-only `whisk_guest.hpp` SDK.
 
 ---
 
-## Development Macros
+## Building & Testing
 
-WhiskDB provides unified macro commands for standard development, compilation, and testing workflows. These commands can be executed directly using `cmake <macro>` or `scripts/macro.sh <macro>`:
+### Prerequisites (Ubuntu 24.04+ / Debian 13 `x86_64`)
 
-| Macro Command | Description | Artifact Output |
+Run the setup script to install CMake, Ninja, Clang/LLD (`wasm32` target), `clang-tidy`, and the Wasmtime C API:
+
+```bash
+./scripts/setup-dev.sh
+```
+
+### Build & Test Commands
+
+Use `./scripts/macro.sh` (or standard CMake presets from `CMakePresets.json`):
+
+| Command | Equivalent CMake Preset | Description |
 |---|---|---|
-| `cmake build-debug` | Configures and compiles the engine, apps, and test suites in Debug mode. | `build/debug/` |
-| `cmake build-release` | Configures and compiles with maximum compiler optimizations in Release mode. | `build/release/` |
-| `cmake run-tests` | Compiles Debug and executes all CTest suites with verbose diagnostic reporting on failure. | `build/debug/` |
-| `cmake run-tests <regex>` | Runs only test suites matching the specified regex filter (e.g. `cmake run-tests wal`). | `build/debug/` |
-| `cmake bench` | Builds Release and executes the persistence and throughput benchmark suite (`whisk_bench`). | `build/release/` |
-| `cmake bench-compare [branch]` | Runs the automated benchmark harness comparing current metrics against a target branch (defaults to `master`). | Benchmark summary |
-| `cmake clean` | Removes all temporary build trees and cached dependency artifacts. | `build/debug`, `build/release` |
+| `./scripts/macro.sh build-debug` | `cmake --workflow --preset build-debug` | Configure and build Debug targets in `build/debug/`. |
+| `./scripts/macro.sh build-release` | `cmake --workflow --preset build-release` | Configure and build Release targets in `build/release/`. |
+| `./scripts/macro.sh run-tests` | `cmake --workflow --preset run-tests` | Build Debug and run all CTest suites. |
+| `./scripts/macro.sh run-tests <regex>` | `ctest --test-dir build/debug -R <regex>` | Run test suites matching `<regex>` (e.g. `wal`, `sql`, `wasm`). |
+| `./scripts/macro.sh bench` | — | Build Release and run `whisk_bench`. |
+| `./scripts/macro.sh bench-compare [branch]` | — | Compare benchmark performance against a target branch. |
+| `./scripts/macro.sh clean` | — | Remove `build/debug/` and `build/release/`. |
 
-### Adding Custom Macros
+### Sanitizers (ASAN + UBSAN)
 
-All macros are orchestrated through `scripts/macro.sh`. To implement a new development macro:
-
-1. Open `scripts/macro.sh`.
-2. Define a bash handler function:
-   ```bash
-   cmd_coverage() {
-     cmd_build_debug
-     echo "==> Generating code coverage report..."
-     # Execute coverage tooling
-   }
-   ```
-3. Register the command pattern in the `case "$SUBCOMMAND" in` dispatcher block.
+```bash
+cmake -S . -B build/debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DWHISKDB_SANITIZE=ON
+cmake --build build/debug
+ASAN_OPTIONS=handle_segv=0:allow_user_segv_handler=1:detect_leaks=1 ctest --test-dir build/debug --output-on-failure
+```
 
 ---
 
-## External Libraries Summary
+## External Libraries
 
-WhiskDB integrates focused external libraries for networking, data storage, serialization, and sandboxed bytecode execution:
+CMake uses system-installed libraries when available and falls back to `FetchContent`:
 
-- **Asio**: Standalone asynchronous networking, TCP session multiplexing, and zero-copy length-prefixed binary framing.
-- **SQLite3**: In-process SQL query compilation and relational table storage.
-- **libwasmtime**: Fast, sandboxed WebAssembly execution environment.
-- **toml++**: Configuration parsing (`config.toml`).
+| Library | Role |
+|---|---|
+| **[Asio](https://think-async.com/Asio/)** | Standalone asynchronous TCP networking (`ASIO_STANDALONE`). |
+| **[SQLite3](https://www.sqlite.org/)** | Embedded in-memory relational SQL engine (C-amalgamation). |
+| **[Wasmtime](https://wasmtime.dev/)** (`libwasmtime`) | Sandboxed WebAssembly runtime with fuel metering and module pre-compilation. |
+| **[toml++](https://marzer.github.io/tomlplusplus/)** | Header-only TOML parser for `config.toml`. |
 
-For deep architectural requirements, component links, and coding standards, refer to the [Developer Guide](developer-guide.md).
+---
+
+## Repository Layout
+
+```text
+app/          Executables (whiskdb server, whisk CLI, whisk_bench)
+include/      Public headers (common, cli, client, network, sdk, sql, storage, wasm)
+src/          Core library implementation
+tests/        Unit, sandbox, and end-to-end test suites (CTest)
+examples/     Sample C++23 Whisk modules
+scripts/      Setup, build/test runner, demo, and benchmark scripts
+docs/         MkDocs documentation source
+config.toml   Default server configuration
+```
+
+For coding conventions and PR guidelines, see the [Developer Guide](developer-guide.md).
