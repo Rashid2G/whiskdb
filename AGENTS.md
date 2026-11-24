@@ -131,6 +131,7 @@ Every agent MUST adhere to this strict 5-step development lifecycle. **Never fin
 
 **Core rules:**
 - **1 Issue = 1 Branch = 1 PR:** Every task starts as a tracked GitHub Issue with clear Acceptance Criteria and Test Requirements.
+- **No Direct Merges (PR Only):** Agents MUST NEVER push directly to `dev`, `main`, or `master`, and MUST NEVER merge Pull Requests or branches themselves (via `git merge`, `gh pr merge`, or any merge tool) unless explicitly instructed by the user. Always end your workflow with an open Pull Request after completing all development flow steps.
 - **Commits:** Conventional commits (`feat: ...`, `fix: ...`, `refactor: ...`, `test: ...`, `docs: ...`).
 - **Target branch:** Always `dev` (`main`/`master` is reserved for stable milestone releases).
 - **Issue Linking & Auto-Close:**
@@ -191,6 +192,7 @@ Every agent MUST adhere to this strict 5-step development lifecycle. **Never fin
 
 ### Step 5: Open Pull Request & Link Issue (MANDATORY COMPLETION)
 - **CRITICAL:** An agent has NOT completed their task until the Pull Request is created on GitHub. Never stop at a local commit or branch push.
+- **STOP AT THE PR — DO NOT MERGE:** After completing all development flow steps and opening/linking the Pull Request, stop and hand back to the user. Never merge the PR or merge your branch directly into `dev`, `main`, or `master` unless explicitly instructed by the user.
 - Target branch is ALWAYS `dev`:
   - **If this PR completely resolves the issue:**
     ```bash
